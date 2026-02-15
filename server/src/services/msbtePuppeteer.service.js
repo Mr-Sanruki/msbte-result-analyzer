@@ -68,10 +68,23 @@ class MsBteFetchJob {
 
     this.total = batch.results.length;
 
+    const isProd = env.NODE_ENV === "production";
+    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+
     this.browser = await puppeteer.launch({
-      headless: false,
+      headless: isProd ? "new" : false,
       defaultViewport: null,
-      args: ["--start-maximized"],
+      executablePath,
+      args: isProd
+        ? [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-gpu",
+            "--no-zygote",
+            "--single-process",
+          ]
+        : ["--start-maximized"],
     });
 
     this.page = await this.browser.newPage();
