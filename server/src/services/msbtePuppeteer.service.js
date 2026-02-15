@@ -1,4 +1,5 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
+import chromium from "@sparticuz/chromium";
 
 import { env } from "../config/env.js";
 import { ResultBatch } from "../models/ResultBatch.js";
@@ -69,22 +70,15 @@ class MsBteFetchJob {
     this.total = batch.results.length;
 
     const isProd = env.NODE_ENV === "production";
-    const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || undefined;
+    const executablePath = isProd
+      ? (process.env.PUPPETEER_EXECUTABLE_PATH || (await chromium.executablePath()))
+      : undefined;
 
     this.browser = await puppeteer.launch({
-      headless: isProd ? "new" : false,
-      defaultViewport: null,
+      headless: isProd ? chromium.headless : false,
+      defaultViewport: isProd ? chromium.defaultViewport : null,
       executablePath,
-      args: isProd
-        ? [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--no-zygote",
-            "--single-process",
-          ]
-        : ["--start-maximized"],
+      args: isProd ? chromium.args : ["--start-maximized"],
     });
 
     this.page = await this.browser.newPage();
