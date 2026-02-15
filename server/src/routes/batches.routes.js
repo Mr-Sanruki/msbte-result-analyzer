@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import {
   analyticsSummary,
   batchAnalytics,
+  deleteBatch,
   exportBatchXlsx,
   getBatch,
   getStudentInBatch,
@@ -25,5 +26,6 @@ router.get("/batches/:id/students/:enrollment", requireAuth, getStudentInBatch);
 router.post("/batches/:id/reparse", requireAuth, reparseBatch);
 router.post("/batches/:id/reset", requireAuth, resetFailedOrUnknown);
 router.get("/batches/:id/export.xlsx", requireAuth, exportBatchXlsx);
+router.delete("/batches/:id", requireAuth, deleteBatch);
 
 export default router;

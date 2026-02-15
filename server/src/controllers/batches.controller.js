@@ -4,6 +4,7 @@ import { ResultBatch } from "../models/ResultBatch.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { extractEnrollmentNumbersFromXlsx } from "../services/excel.service.js";
 import { parseMsbteResultHtml } from "../services/msbteParse.service.js";
+import { msbteJobService } from "../services/msbtePuppeteer.service.js";
 import ExcelJS from "exceljs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -563,10 +564,18 @@ export const recentBatches = asyncHandler(async (req, res) => {
       id: b._id,
       uploadDate: b.uploadDate,
       totalStudents: b.totalStudents,
-      passCount: b.passCount,
-      failCount: b.failCount,
-      topperName: b.topperName || null,
-      topperPercentage: b.topperPercentage || null,
+      passCount: (b.results || []).filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length,
+      failCount: (b.results || []).filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length,
+      topperName:
+        (b.results || []).reduce(
+          (best, r) => (typeof r?.percentage === "number" && (best.p === null || r.percentage > best.p) ? { n: r.name || null, p: r.percentage } : best),
+          { n: null, p: null }
+        ).n || null,
+      topperPercentage:
+        (b.results || []).reduce(
+          (best, r) => (typeof r?.percentage === "number" && (best.p === null || r.percentage > best.p) ? { n: r.name || null, p: r.percentage } : best),
+          { n: null, p: null }
+        ).p,
       status: b.status,
     })),
   });
@@ -592,4 +601,15 @@ export const getBatch = asyncHandler(async (req, res) => {
       errors: batch.errors,
     },
   });
+});
+
+export const deleteBatch = asyncHandler(async (req, res) => {
+  const batch = await ResultBatch.findOne({ _id: req.params.id, teacherId: req.user.sub }).lean();
+  if (!batch) {
+    return res.status(404).json({ error: { message: "Batch not found" } });
+  }
+
+  await msbteJobService.stop({ batchId: req.params.id, teacherId: req.user.sub });
+  await ResultBatch.deleteOne({ _id: req.params.id, teacherId: req.user.sub });
+  return res.json({ ok: true });
 });

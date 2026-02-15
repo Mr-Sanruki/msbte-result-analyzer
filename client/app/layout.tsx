@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MSBTE Result Manager",
-  description: "Automated MSBTE Result Processing for Teachers",
+  title: "MSBTE Result Analyzer",
+  description: "MSBTE result analysis for teachers",
 };
 
 export default function RootLayout({

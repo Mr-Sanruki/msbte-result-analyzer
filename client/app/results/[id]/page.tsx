@@ -3,13 +3,31 @@
 import Link from "next/link";
 import * as React from "react";
 import { useParams } from "next/navigation";
+import {
+  BarChart3,
+  Download,
+  FileSearch,
+  Filter,
+  GraduationCap,
+  IdCard,
+  Search,
+  Percent,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  Square,
+  Trophy,
+  Eye,
+} from "lucide-react";
 
 import { Protected } from "@/components/Protected";
 import { useAuth } from "@/components/AuthProvider";
+import { AppShell } from "@/components/AppShell";
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/StatCard";
 
 type FetchState = {
   batchId: string;
@@ -101,11 +119,15 @@ export default function ResultsPage() {
     "enrollment"
   );
   const [expanded, setExpanded] = React.useState<string | null>(null);
-  const [autoContinue, setAutoContinue] = React.useState(false);
-  const lastAutoRef = React.useRef<number>(0);
 
   const [analytics, setAnalytics] = React.useState<BatchAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = React.useState(true);
+
+  function clearFilters() {
+    setQuery("");
+    setStatusFilter("all");
+    setSortKey("enrollment");
+  }
 
   async function loadBatch() {
     try {
@@ -114,6 +136,19 @@ export default function ResultsPage() {
     } catch (err: any) {
       if (err?.response?.status === 401) return;
       throw err;
+    }
+  }
+
+  async function refreshAll() {
+    setError(null);
+    setBusy("refresh");
+    try {
+      await Promise.all([loadBatch(), loadState(), loadAnalytics()]);
+    } catch (err: any) {
+      const message = err?.response?.data?.error?.message || "Refresh failed";
+      setError(message);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -147,8 +182,20 @@ export default function ResultsPage() {
     setError(null);
     setBusy("reset");
     try {
+      // Ensure any existing puppeteer job is closed so start() relaunches the MSBTE flow.
+      try {
+        await api.post(`/batches/${batchId}/fetch/stop`);
+      } catch {
+        // ignore
+      }
+
       await api.post(`/batches/${batchId}/reset`, { includeUnknown: true });
-      await Promise.all([loadBatch(), loadState()]);
+      await loadBatch();
+
+      // Restart fetch flow so reset records actually get re-fetched.
+      const res = await api.post(`/batches/${batchId}/fetch/start`);
+      setState(res.data.state);
+      await Promise.all([loadBatch(), loadState(), loadAnalytics()]);
     } catch (err: any) {
       const message = err?.response?.data?.error?.message || "Reset failed";
       setError(message);
@@ -223,24 +270,6 @@ export default function ResultsPage() {
     loadAnalytics().catch(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, authLoading, teacher]);
-
-  React.useEffect(() => {
-    if (!autoContinue) return;
-    if (!teacher || authLoading) return;
-    if (!state || state.status !== "ready_for_captcha") return;
-    if (busy !== null) return;
-
-    const now = Date.now();
-    if (now - lastAutoRef.current < 1500) return;
-    lastAutoRef.current = now;
-
-    // Keep trying; backend will return {info:'captcha_empty'} until CAPTCHA is filled.
-    api
-      .post(`/batches/${batchId}/fetch/continue`)
-      .then(() => Promise.all([loadBatch(), loadState()]))
-      .catch(() => null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoContinue, state?.status, busy, authLoading, teacher, batchId]);
 
   async function start() {
     setError(null);
@@ -327,12 +356,24 @@ export default function ResultsPage() {
 
   return (
     <Protected>
-      <div className="min-h-screen bg-slate-50">
+      <AppShell>
         <PageHeader
-          title="Batch Details"
+          title="Student Results"
           subtitle={batchId}
-          backHref="/dashboard"
-          backLabel="Dashboard"
+          backHref="/results"
+          backLabel="Back"
+          actions={
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={refreshAll} disabled={busy !== null}>
+                <RefreshCw className={"mr-2 h-4 w-4 " + (busy === "refresh" ? "animate-spin" : "")} />
+                Refresh
+              </Button>
+              <Button variant="secondary" size="sm" onClick={downloadExcel} disabled={busy !== null}>
+                <Download className="mr-2 h-4 w-4" />
+                {busy === "download" ? "Preparing..." : "Export Excel"}
+              </Button>
+            </div>
+          }
         />
 
         <main className="mx-auto max-w-6xl px-4 py-8">
@@ -340,16 +381,22 @@ export default function ResultsPage() {
             <div className="text-sm text-slate-600">Loading...</div>
           ) : (
             <div className="grid gap-6">
+              {error ? (
+                <Card>
+                  <CardContent className="py-4">
+                    <div className="text-sm text-red-600">{error}</div>
+                  </CardContent>
+                </Card>
+              ) : null}
+
               <Card>
                 <CardHeader>
-                  <div className="text-base font-semibold text-slate-900">MSBTE Fetch Control</div>
+                  <div className="text-base font-semibold text-slate-900">Result Fetcher</div>
                   <div className="text-sm text-slate-600">
-                    Flow: click Start (opens MSBTE page) → enter CAPTCHA in opened browser → click Continue here.
+                    Start the MSBTE browser flow, enter CAPTCHA in opened browser, then Continue here.
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {error ? <div className="mb-4 text-sm text-red-600">{error}</div> : null}
-
                   <div className="grid gap-4 md:grid-cols-3">
                     <div className="rounded-3xl border border-slate-200 bg-white p-4">
                       <div className="text-xs text-slate-600">Job Status</div>
@@ -369,40 +416,38 @@ export default function ResultsPage() {
                         <div className="mt-2 text-xs text-slate-600">&nbsp;</div>
                       )}
                     </div>
+
                     <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="text-xs text-slate-600">Actions</div>
-                      <label className="mt-2 flex select-none items-center gap-2 text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          checked={autoContinue}
-                          onChange={(e) => setAutoContinue(e.target.checked)}
-                        />
-                        Auto-Continue (when CAPTCHA is filled)
-                      </label>
+                      <div className="text-xs text-slate-600">Controls</div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        <Button onClick={start} disabled={busy !== null}>
+                        <Button size="sm" onClick={start} disabled={busy !== null}>
+                          <Play className="mr-2 h-4 w-4" />
                           {busy === "start" ? "Starting..." : "Start"}
                         </Button>
                         <Button
+                          size="sm"
                           variant="secondary"
                           onClick={cont}
                           disabled={busy !== null || state?.status !== "ready_for_captcha"}
                         >
                           {busy === "continue" ? "Continuing..." : "Continue"}
                         </Button>
-                        <Button variant="ghost" onClick={stop} disabled={busy !== null}>
+                        <Button size="sm" variant="ghost" onClick={stop} disabled={busy !== null}>
+                          <Square className="mr-2 h-4 w-4" />
                           {busy === "stop" ? "Stopping..." : "Stop"}
                         </Button>
-                        <Button variant="secondary" onClick={downloadExcel} disabled={busy !== null}>
-                          {busy === "download" ? "Preparing..." : "Download Excel"}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" variant="secondary" onClick={reparse} disabled={busy !== null}>
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                          {busy === "reparse" ? "Re-parsing..." : "Re-parse"}
                         </Button>
-                        <Button variant="secondary" onClick={reparse} disabled={busy !== null}>
-                          {busy === "reparse" ? "Re-parsing..." : "Re-parse saved HTML"}
-                        </Button>
-                        <Button variant="secondary" onClick={resetFailedUnknown} disabled={busy !== null}>
+                        <Button size="sm" variant="secondary" onClick={resetFailedUnknown} disabled={busy !== null}>
                           {busy === "reset" ? "Resetting..." : "Retry Failed/Unknown"}
                         </Button>
                       </div>
+
                       <div className="mt-3 text-xs text-slate-600">
                         Continue is enabled only when waiting for CAPTCHA.
                       </div>
@@ -424,39 +469,35 @@ export default function ResultsPage() {
                   ) : (
                     <div className="grid gap-6">
                       <div className="grid gap-4 md:grid-cols-4">
-                        <Card>
-                          <CardHeader>
-                            <div className="text-sm text-slate-600">Total Students</div>
-                            <div className="text-2xl font-semibold text-slate-900">{analytics.totals.totalStudents}</div>
-                          </CardHeader>
-                          <CardContent />
-                        </Card>
-                        <Card>
-                          <CardHeader>
-                            <div className="text-sm text-slate-600">Pass Rate</div>
-                            <div className="text-2xl font-semibold text-slate-900">{analytics.totals.passRate}%</div>
-                          </CardHeader>
-                          <CardContent />
-                        </Card>
-                        <Card>
-                          <CardHeader>
-                            <div className="text-sm text-slate-600">Pass / Fail</div>
-                            <div className="text-base font-semibold text-slate-900">
-                              {analytics.totals.pass} / {analytics.totals.fail}
-                            </div>
-                          </CardHeader>
-                          <CardContent />
-                        </Card>
-                        <Card>
-                          <CardHeader>
-                            <div className="text-sm text-slate-600">Topper</div>
-                            <div className="text-base font-semibold text-slate-900">
+                        <StatCard
+                          tone="blue"
+                          label="Total Students"
+                          value={analytics.totals.totalStudents}
+                          icon={<GraduationCap className="h-5 w-5" />}
+                        />
+                        <StatCard
+                          tone="green"
+                          label="Pass Rate"
+                          value={`${analytics.totals.passRate}%`}
+                          icon={<Percent className="h-5 w-5" />}
+                        />
+                        <StatCard
+                          tone="orange"
+                          label="Pass / Fail"
+                          value={`${analytics.totals.pass} / ${analytics.totals.fail}`}
+                          icon={<BarChart3 className="h-5 w-5" />}
+                        />
+                        <StatCard
+                          tone="purple"
+                          label="Topper"
+                          value={
+                            <span className="text-base">
                               {analytics.topper.name || "-"}
                               {typeof analytics.topper.percentage === "number" ? ` (${analytics.topper.percentage}%)` : ""}
-                            </div>
-                          </CardHeader>
-                          <CardContent />
-                        </Card>
+                            </span>
+                          }
+                          icon={<Trophy className="h-5 w-5" />}
+                        />
                       </div>
 
                       <div className="grid gap-6 md:grid-cols-2">
@@ -508,47 +549,67 @@ export default function ResultsPage() {
 
               <Card>
                 <CardHeader>
-                  <div className="text-base font-semibold text-slate-900">Students</div>
+                  <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                    <FileSearch className="h-4 w-4 text-slate-600" />
+                    Students
+                  </div>
                   <div className="text-sm text-slate-600">Search, filter, and open a student to see subject-wise marks.</div>
                 </CardHeader>
                 <CardContent>
-                  <div className="mb-4 grid gap-3 md:grid-cols-3">
-                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-600">Search</div>
-                      <input
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        placeholder="Enrollment / name / seat"
-                        className="mt-1 w-full bg-transparent text-sm outline-none"
-                      />
+                  <div className="mb-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                        <Filter className="h-4 w-4 text-slate-600" />
+                        Filters & Search
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        <Button variant="secondary" size="sm" onClick={clearFilters}>
+                          Clear Filters
+                        </Button>
+                      </div>
                     </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-600">Status</div>
-                      <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value as any)}
-                        className="mt-1 w-full bg-transparent text-sm outline-none"
-                      >
-                        <option value="all">All</option>
-                        <option value="Pass">Pass</option>
-                        <option value="Fail">Fail</option>
-                        <option value="Unknown">Unknown</option>
-                        <option value="Error">Error</option>
-                      </select>
-                    </div>
+                    <div className="mt-4 grid gap-3 md:grid-cols-4">
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 md:col-span-2">
+                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                          <Search className="h-3.5 w-3.5" />
+                          Search
+                        </div>
+                        <input
+                          value={query}
+                          onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Enrollment / name / seat"
+                          className="mt-1 w-full bg-transparent text-sm outline-none"
+                        />
+                      </div>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
-                      <div className="text-xs text-slate-600">Sort</div>
-                      <select
-                        value={sortKey}
-                        onChange={(e) => setSortKey(e.target.value as any)}
-                        className="mt-1 w-full bg-transparent text-sm outline-none"
-                      >
-                        <option value="enrollment">Enrollment</option>
-                        <option value="percentage_desc">Percentage (high to low)</option>
-                        <option value="percentage_asc">Percentage (low to high)</option>
-                      </select>
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-xs text-slate-600">Status</div>
+                        <select
+                          value={statusFilter}
+                          onChange={(e) => setStatusFilter(e.target.value as any)}
+                          className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
+                        >
+                          <option value="all">All</option>
+                          <option value="Pass">Pass</option>
+                          <option value="Fail">Fail</option>
+                          <option value="Unknown">Unknown</option>
+                          <option value="Error">Error</option>
+                        </select>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                        <div className="text-xs text-slate-600">Sort</div>
+                        <select
+                          value={sortKey}
+                          onChange={(e) => setSortKey(e.target.value as any)}
+                          className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
+                        >
+                          <option value="enrollment">Enrollment</option>
+                          <option value="percentage_desc">Percentage (high to low)</option>
+                          <option value="percentage_asc">Percentage (low to high)</option>
+                        </select>
+                      </div>
                     </div>
                   </div>
 
@@ -605,18 +666,22 @@ export default function ResultsPage() {
                                 </td>
                                 <td className="px-4 py-3 text-red-600">{r.errorMessage || ""}</td>
                                 <td className="px-4 py-3 text-right">
-                                  <div className="flex items-center justify-end gap-1">
+                                  <div className="flex items-center justify-end gap-2">
                                     <Link href={`/results/${batchId}/students/${encodeURIComponent(r.enrollmentNumber)}`}>
-                                      <Button variant="ghost" size="sm">Profile</Button>
+                                      <Button variant="secondary" size="sm">
+                                        <IdCard className="mr-2 h-4 w-4" />
+                                        Profile
+                                      </Button>
                                     </Link>
                                     <Button
-                                      variant="ghost"
+                                      variant="secondary"
                                       size="sm"
                                       onClick={() =>
                                         setExpanded((cur) => (cur === r.enrollmentNumber ? null : r.enrollmentNumber))
                                       }
                                       disabled={!r.subjectMarks}
                                     >
+                                      <Eye className="mr-2 h-4 w-4" />
                                       {isOpen ? "Hide" : "View"}
                                     </Button>
                                   </div>
@@ -686,7 +751,7 @@ export default function ResultsPage() {
             </div>
           )}
         </main>
-      </div>
+      </AppShell>
     </Protected>
   );
 }

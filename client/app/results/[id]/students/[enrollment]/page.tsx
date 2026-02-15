@@ -3,12 +3,16 @@
 import Link from "next/link";
 import * as React from "react";
 import { useParams } from "next/navigation";
+import { BadgePercent, Hash, IdCard, User } from "lucide-react";
 
 import { Protected } from "@/components/Protected";
+import { AppShell } from "@/components/AppShell";
+import { FadeIn } from "@/components/Animated";
 import { PageHeader } from "@/components/PageHeader";
 import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { StatCard } from "@/components/StatCard";
 
 type SubjectMarksEntry = {
   faThMax?: number | string | null;
@@ -92,7 +96,7 @@ export default function StudentDetailPage() {
 
   return (
     <Protected>
-      <div className="min-h-screen bg-slate-50">
+      <AppShell>
         <PageHeader
           title="Student Profile"
           subtitle={
@@ -113,49 +117,44 @@ export default function StudentDetailPage() {
             <div className="text-sm text-slate-600">No data found.</div>
           ) : (
             <div className="grid gap-6">
-              <div className="grid gap-4 md:grid-cols-4">
-                <Card>
-                  <CardHeader>
-                    <div className="text-xs text-slate-600">Name</div>
-                    <div className="text-base font-semibold text-slate-900">{student.name || "-"}</div>
-                  </CardHeader>
-                  <CardContent />
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <div className="text-xs text-slate-600">Seat No</div>
-                    <div className="text-base font-semibold text-slate-900">{student.seatNumber || "-"}</div>
-                  </CardHeader>
-                  <CardContent />
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <div className="text-xs text-slate-600">Percentage</div>
-                    <div className="text-base font-semibold text-slate-900">
-                      {typeof student.percentage === "number" ? `${student.percentage}%` : "-"}
-                    </div>
-                    <div className="text-xs text-slate-600">{student.resultClass || "-"}</div>
-                  </CardHeader>
-                  <CardContent />
-                </Card>
-                <Card>
-                  <CardHeader>
-                    <div className="text-xs text-slate-600">Status</div>
-                    <div className="text-base font-semibold text-slate-900">
-                      {student.errorMessage ? "Error" : student.resultStatus || "Unknown"}
-                    </div>
-                    <div className="text-xs text-red-600">{student.errorMessage || ""}</div>
-                  </CardHeader>
-                  <CardContent />
-                </Card>
-              </div>
+              <FadeIn>
+                <div className="grid gap-4 md:grid-cols-4">
+                  <StatCard
+                    tone="blue"
+                    label="Name"
+                    value={<span className="text-base">{student.name || "-"}</span>}
+                    icon={<User className="h-5 w-5" />}
+                  />
+                  <StatCard
+                    tone="purple"
+                    label="Seat No"
+                    value={<span className="text-base">{student.seatNumber || "-"}</span>}
+                    icon={<IdCard className="h-5 w-5" />}
+                  />
+                  <StatCard
+                    tone="green"
+                    label="Percentage"
+                    value={typeof student.percentage === "number" ? `${student.percentage}%` : "-"}
+                    hint={<>{student.resultClass || "-"}</>}
+                    icon={<BadgePercent className="h-5 w-5" />}
+                  />
+                  <StatCard
+                    tone={student.errorMessage ? "orange" : "blue"}
+                    label="Status"
+                    value={student.errorMessage ? "Error" : student.resultStatus || "Unknown"}
+                    hint={<span className="text-red-600">{student.errorMessage || ""}</span>}
+                    icon={<Hash className="h-5 w-5" />}
+                  />
+                </div>
+              </FadeIn>
 
-              <Card>
-                <CardHeader>
-                  <div className="text-base font-semibold text-slate-900">Subject-wise Marks</div>
-                  <div className="text-sm text-slate-600">Detailed breakdown parsed from MSBTE statement</div>
-                </CardHeader>
-                <CardContent>
+              <FadeIn delay={0.06}>
+                <Card>
+                  <CardHeader>
+                    <div className="text-base font-semibold text-slate-900">Subject-wise Marks</div>
+                    <div className="text-sm text-slate-600">Detailed breakdown parsed from MSBTE statement</div>
+                  </CardHeader>
+                  <CardContent>
                   {subjects.length === 0 ? (
                     <div className="text-sm text-slate-600">No subject marks parsed yet.</div>
                   ) : (
@@ -202,8 +201,9 @@ export default function StudentDetailPage() {
                       </table>
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+              </FadeIn>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <Card>
@@ -251,7 +251,7 @@ export default function StudentDetailPage() {
             </div>
           )}
         </main>
-      </div>
+      </AppShell>
     </Protected>
   );
 }
