@@ -25,7 +25,8 @@ export const continueFetch = asyncHandler(async (req, res) => {
   }
 
   try {
-    await job.continueAfterCaptcha();
+    const captcha = req.body?.captcha;
+    await job.continueAfterCaptcha({ captcha });
     return res.json({ state: job.getState() });
   } catch (e) {
     if (e?.code === "CAPTCHA_EMPTY") {
@@ -33,6 +34,16 @@ export const continueFetch = asyncHandler(async (req, res) => {
     }
     throw e;
   }
+});
+
+export const getCaptcha = asyncHandler(async (req, res) => {
+  const job = msbteJobService.get({ batchId: req.params.id, teacherId: req.user.sub });
+  if (!job) {
+    return res.status(400).json({ error: { message: "Job not started" } });
+  }
+
+  const pngBase64 = await job.getCaptchaPngBase64();
+  return res.json({ pngBase64 });
 });
 
 export const stopFetch = asyncHandler(async (req, res) => {

@@ -54,6 +54,65 @@ class MsBteFetchJob {
     this.selectors = loadSelectors();
   }
 
+  async getCaptchaPngBase64() {
+    if (!this.page) {
+      const err = new Error("Job not started");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!this.selectors.captchaInput) {
+      const err = new Error("CAPTCHA selector not configured");
+      err.statusCode = 500;
+      throw err;
+    }
+
+    // Try to capture the captcha image near the captcha input. MSBTE pages sometimes render
+    // captcha as an <img> next to the input.
+    const handle = await this.page
+      .evaluateHandle((captchaSel) => {
+        const input = document.querySelector(captchaSel);
+        if (!input) return null;
+        const row = input.closest("tr") || input.parentElement;
+        if (!row) return null;
+        const img = row.querySelector("img");
+        return img || input;
+      }, this.selectors.captchaInput)
+      .catch(() => null);
+
+    const element = handle ? handle.asElement() : null;
+    if (!element) {
+      const err = new Error("CAPTCHA element not found");
+      err.statusCode = 404;
+      throw err;
+    }
+
+    await element.scrollIntoViewIfNeeded?.().catch(() => null);
+    const buf = await element.screenshot({ type: "png" });
+    await handle.dispose?.().catch(() => null);
+    return Buffer.from(buf).toString("base64");
+  }
+
+  async setCaptchaValue(captcha) {
+    if (!this.page) {
+      const err = new Error("Job not started");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (!this.selectors.captchaInput) {
+      const err = new Error("CAPTCHA selector not configured");
+      err.statusCode = 500;
+      throw err;
+    }
+    const value = String(captcha || "").trim();
+    if (!value) {
+      const err = new Error("CAPTCHA is empty");
+      err.statusCode = 409;
+      err.code = "CAPTCHA_EMPTY";
+      throw err;
+    }
+    await fillInputValue(this.page, this.selectors.captchaInput, value);
+  }
+
   async init() {
     const batch = await ResultBatch.findOne({ _id: this.batchId, teacherId: this.teacherId });
     if (!batch) {
@@ -166,7 +225,7 @@ class MsBteFetchJob {
     this.status = "ready_for_captcha";
   }
 
-  async continueAfterCaptcha() {
+  async continueAfterCaptcha({ captcha } = {}) {
     if (!this.page) {
       const err = new Error("Job not started");
       err.statusCode = 400;
@@ -182,6 +241,10 @@ class MsBteFetchJob {
     this.status = "submitting";
 
     try {
+      if (captcha) {
+        await this.setCaptchaValue(captcha);
+      }
+
       // In auto-continue mode we should not submit unless CAPTCHA is actually filled.
       // If captcha selector is configured and the input value is empty, throw a typed error.
       if (this.selectors.captchaInput) {

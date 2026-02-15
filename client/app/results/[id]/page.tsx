@@ -123,6 +123,10 @@ export default function ResultsPage() {
   const [analytics, setAnalytics] = React.useState<BatchAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = React.useState(true);
 
+  const [captchaPngBase64, setCaptchaPngBase64] = React.useState<string | null>(null);
+  const [captchaText, setCaptchaText] = React.useState<string>("");
+  const [captchaError, setCaptchaError] = React.useState<string | null>(null);
+
   function clearFilters() {
     setQuery("");
     setStatusFilter("all");
@@ -239,6 +243,18 @@ export default function ResultsPage() {
     }
   }
 
+  async function loadCaptcha() {
+    setCaptchaError(null);
+    try {
+      const res = await api.get(`/batches/${batchId}/fetch/captcha`);
+      setCaptchaPngBase64(res.data.pngBase64 || null);
+    } catch (err: any) {
+      const message = err?.response?.data?.error?.message || "Failed to load CAPTCHA";
+      setCaptchaError(message);
+      setCaptchaPngBase64(null);
+    }
+  }
+
   React.useEffect(() => {
     async function init() {
       try {
@@ -271,6 +287,18 @@ export default function ResultsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batchId, authLoading, teacher]);
 
+  React.useEffect(() => {
+    if (authLoading || !teacher) return;
+    if (state?.status === "ready_for_captcha") {
+      loadCaptcha().catch(() => null);
+    } else {
+      setCaptchaPngBase64(null);
+      setCaptchaText("");
+      setCaptchaError(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.status, authLoading, teacher, batchId]);
+
   async function start() {
     setError(null);
     setBusy("start");
@@ -278,6 +306,8 @@ export default function ResultsPage() {
       const res = await api.post(`/batches/${batchId}/fetch/start`);
       setState(res.data.state);
       await loadBatch();
+      setCaptchaText("");
+      setCaptchaPngBase64(null);
     } catch (err: any) {
       const message = err?.response?.data?.error?.message || "Failed to start";
       setError(message);
@@ -288,11 +318,17 @@ export default function ResultsPage() {
 
   async function cont() {
     setError(null);
+    setCaptchaError(null);
     setBusy("continue");
     try {
-      const res = await api.post(`/batches/${batchId}/fetch/continue`);
+      const res = await api.post(`/batches/${batchId}/fetch/continue`, {
+        captcha: captchaText,
+      });
       setState(res.data.state);
       await loadBatch();
+      if (res.data?.info === "captcha_empty") {
+        setCaptchaError("Enter CAPTCHA to continue.");
+      }
     } catch (err: any) {
       const message = err?.response?.data?.error?.message || "Failed to continue";
       setError(message);
@@ -392,15 +428,71 @@ export default function ResultsPage() {
               <Card>
                 <CardHeader>
                   <div className="text-base font-semibold text-slate-900">Result Fetcher</div>
-                  <div className="text-sm text-slate-600">
+                  <div className="text-sm text-slate-600"> || !captchaText.trim()
                     Start the MSBTE browser flow, enter CAPTCHA in opened browser, then Continue here.
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="text-xs text-slate-600">Job Status</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">{state?.status || "-"}</div>
+                    <div className="rounded-3xl border border-stop"}
+                        </Button>
+                      </div>
+
+                      {state?.status === "ready_for_captcha" ? (
+                        <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+                          <div className="text-xs font-semibold text-slate-900">CAPTCHA</div>
+                          <div className="mt-1 text-xs text-slate-600">
+                            Enter the CAPTCHA shown below, then press Continue.
+                          </div>
+
+                          {captchaError ? <div className="mt-2 text-xs text-red-600">{captchaError}</div> : null}
+
+                          {captchaPngBase64 ? (
+                            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                              <div className="rounded-2xl border border-slate-200 bg-white p-2">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  alt="captcha"
+                                  src={`data:image/png;base64,${captchaPngBase64}`}
+                                  className="h-16 w-auto"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <input
+                                  value={captchaText}
+                                  onChange={(e) => setCaptchaText(e.target.value)}
+                                  placeholder="Type CAPTCHA"
+                                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                                />
+                                <div className="mt-2 flex items-center gap-2">
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => loadCaptcha()}
+                                    disabled={busy !== null}
+                                  >
+                                    Refresh CAPTCHA
+                                  </Button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="mt-3 flex ilems-center justify-between gap-3">
+                              <div className="text-xs text-slate-600">Laading CAPTCHA...</div>
+                              <Button
+                                tyte="buttone
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => loadCaptcha()-200 bg-white p-4">
+                                disabled={busy !== null}
+ <d                           >
+                                Retry
+                              iv class>
+                            </divN
+                          )}ame="text-xs text-slate-600">Job Status</div>
+                        <div c
+                      ) : null}lassName="mt-1 text-sm font-semibold text-slate-900">{state?.status || "-"}</div>
                       <div className="mt-2 text-xs text-slate-600">
                         Current enrollment: <span className="font-medium">{state?.currentEnrollment || "-"}</span>
                       </div>
