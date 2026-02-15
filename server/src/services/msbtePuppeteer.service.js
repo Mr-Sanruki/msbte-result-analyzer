@@ -72,24 +72,64 @@ class MsBteFetchJob {
       .evaluateHandle((captchaSel) => {
         const input = document.querySelector(captchaSel);
         if (!input) return null;
+
+        const root = input.closest("tr") || input.closest("table") || input.parentElement || document;
+
+        const imgs = Array.from(root.querySelectorAll("img"));
+        const preferred = imgs.find((img) => {
+          const id = (img.getAttribute("id") || "").toLowerCase();
+          const src = (img.getAttribute("src") || "").toLowerCase();
+          const alt = (img.getAttribute("alt") || "").toLowerCase();
+          return (
+            id.includes("captcha") ||
+            src.includes("captcha") ||
+            alt.includes("captcha") ||
+            id.includes("img") && src.includes("aspx")
+          );
+        });
+
+        if (preferred) return preferred;
+
         const row = input.closest("tr") || input.parentElement;
-        if (!row) return null;
-        const img = row.querySelector("img");
-        return img || input;
+        if (row) {
+          const rowImgs = Array.from(row.querySelectorAll("img"));
+          if (rowImgs[0]) return rowImgs[0];
+        }
+
+        return input;
       }, this.selectors.captchaInput)
       .catch(() => null);
 
     const element = handle ? handle.asElement() : null;
-    if (!element) {
-      const err = new Error("CAPTCHA element not found");
-      err.statusCode = 404;
-      throw err;
+    if (element) {
+      await element.scrollIntoViewIfNeeded?.().catch(() => null);
+
+      // If we ended up with the input element, screenshotting it is usually blank.
+      // In that case screenshot a clipped region around it.
+      const tag = await this.page.evaluate((el) => (el ? el.tagName : ""), element).catch(() => "");
+      if (String(tag).toLowerCase() !== "img") {
+        const box = await element.boundingBox().catch(() => null);
+        if (box) {
+          const clip = {
+            x: Math.max(0, box.x - 140),
+            y: Math.max(0, box.y - 60),
+            width: Math.max(50, box.width + 300),
+            height: Math.max(50, box.height + 140),
+          };
+          const buf = await this.page.screenshot({ type: "png", clip });
+          await handle.dispose?.().catch(() => null);
+          return Buffer.from(buf).toString("base64");
+        }
+      }
+
+      const buf = await element.screenshot({ type: "png" });
+      await handle.dispose?.().catch(() => null);
+      return Buffer.from(buf).toString("base64");
     }
 
-    await element.scrollIntoViewIfNeeded?.().catch(() => null);
-    const buf = await element.screenshot({ type: "png" });
-    await handle.dispose?.().catch(() => null);
-    return Buffer.from(buf).toString("base64");
+    const err = new Error("CAPTCHA element not found");
+    err.statusCode = 404;
+    throw err;
   }
 
   async setCaptchaValue(captcha) {
