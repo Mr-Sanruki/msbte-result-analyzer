@@ -70,6 +70,9 @@ class MsBteFetchJob {
     // captcha as an <img> next to the input.
     const handle = await this.page
       .evaluateHandle((captchaSel) => {
+        const direct = document.querySelector("img#imgCaptcha");
+        if (direct) return direct;
+
         const input = document.querySelector(captchaSel);
         if (!input) return null;
 
@@ -130,6 +133,22 @@ class MsBteFetchJob {
     const err = new Error("CAPTCHA element not found");
     err.statusCode = 404;
     throw err;
+  }
+
+  async refreshCaptcha() {
+    if (!this.page) {
+      const err = new Error("Job not started");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Many captcha implementations refresh when you click the image.
+    await this.page
+      .evaluate(() => {
+        const img = document.querySelector("img#imgCaptcha");
+        if (img) img.click();
+      })
+      .catch(() => null);
   }
 
   async setCaptchaValue(captcha) {

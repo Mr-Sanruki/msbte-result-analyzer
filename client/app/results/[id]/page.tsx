@@ -243,10 +243,12 @@ export default function ResultsPage() {
     }
   }
 
-  async function loadCaptcha() {
+  async function loadCaptcha(opts?: { refresh?: boolean }) {
     setCaptchaError(null);
     try {
-      const res = await api.get(`/batches/${batchId}/fetch/captcha`);
+      const res = await api.get(`/batches/${batchId}/fetch/captcha`, {
+        params: opts?.refresh ? { refresh: 1 } : undefined,
+      });
       setCaptchaPngBase64(res.data.pngBase64 || null);
     } catch (err: any) {
       const message = err?.response?.data?.error?.message || "Failed to load CAPTCHA";
@@ -290,7 +292,7 @@ export default function ResultsPage() {
   React.useEffect(() => {
     if (authLoading || !teacher) return;
     if (state?.status === "ready_for_captcha") {
-      loadCaptcha().catch(() => null);
+      loadCaptcha({ refresh: true }).catch(() => null);
     } else {
       setCaptchaPngBase64(null);
       setCaptchaText("");
@@ -477,72 +479,83 @@ export default function ResultsPage() {
                       </div>
 
                       {state?.status === "ready_for_captcha" ? (
-                        <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-50 p-4">
-                          <div className="text-xs font-semibold text-slate-900">CAPTCHA</div>
-                          <div className="mt-1 text-xs text-slate-600">
-                            Enter the CAPTCHA shown below, then press Continue.
+                        <div className="mt-4 overflow-hidden rounded-3xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white">
+                          <div className="flex items-start justify-between gap-3 border-b border-slate-200/80 p-4">
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold tracking-wide text-slate-900">CAPTCHA VERIFICATION</div>
+                              <div className="mt-1 text-xs text-slate-600">
+                                Refresh if unclear. Type exactly as shown, then press Continue.
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => loadCaptcha({ refresh: true })}
+                              disabled={busy !== null}
+                            >
+                              Refresh
+                            </Button>
                           </div>
 
-                          {captchaError ? <div className="mt-2 text-xs text-red-600">{captchaError}</div> : null}
+                          <div className="p-4">
 
-                          {captchaPngBase64 ? (
-                            <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-                              <div className="rounded-2xl border border-slate-200 bg-white p-2">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  alt="captcha"
-                                  src={`data:image/png;base64,${captchaPngBase64}`}
-                                  className="h-16 w-auto"
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <input
-                                  value={captchaText}
-                                  onChange={(e) => setCaptchaText(e.target.value)}
-                                  placeholder="Type CAPTCHA"
-                                  className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
-                                />
-                                <div className="mt-2 flex items-center gap-2">
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => loadCaptcha()}
-                                    disabled={busy !== null}
-                                  >
-                                    Refresh CAPTCHA
-                                  </Button>
+                            {captchaError ? <div className="text-xs text-red-600">{captchaError}</div> : null}
+
+                            {captchaPngBase64 ? (
+                              <div className="mt-3 grid gap-3">
+                                <div className="rounded-2xl border border-slate-200 bg-white p-3">
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    alt="captcha"
+                                    src={`data:image/png;base64,${captchaPngBase64}`}
+                                    className="h-24 w-auto max-w-full select-none"
+                                  />
+                                </div>
+                                <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
+                                  <input
+                                    value={captchaText}
+                                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCaptchaText(e.target.value)}
+                                    placeholder="Enter CAPTCHA"
+                                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                                  />
+                                  <div className="flex items-center justify-end">
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => setCaptchaText("")}
+                                      disabled={busy !== null}
+                                    >
+                                      Clear
+                                    </Button>
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ) : (
-                            <div className="mt-3 flex items-center justify-between gap-3">
-                              <div className="text-xs text-slate-600">
-                                {captchaError ? "Could not load CAPTCHA image." : "Loading CAPTCHA..."}
+                            ) : (
+                              <div className="mt-3 flex items-center justify-between gap-3">
+                                <div className="text-xs text-slate-600">
+                                  {captchaError ? "Could not load CAPTCHA image." : "Loading CAPTCHA image..."}
+                                </div>
+                                <div />
                               </div>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                size="sm"
-                                onClick={() => loadCaptcha()}
-                                disabled={busy !== null}
-                              >
-                                Refresh CAPTCHA
-                              </Button>
-                            </div>
-                          )}
+                            )}
+                            {!captchaPngBase64 ? (
+                              <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                                <div className="text-xs text-slate-600">CAPTCHA Text</div>
+                                <input
+                                  value={captchaText}
+                                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCaptchaText(e.target.value)}
+                                  placeholder="Type CAPTCHA"
+                                  className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                                />
+                              </div>
+                            ) : null}
 
-                          {!captchaPngBase64 ? (
-                            <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                              <div className="text-xs text-slate-600">CAPTCHA Text</div>
-                              <input
-                                value={captchaText}
-                                onChange={(e) => setCaptchaText(e.target.value)}
-                                placeholder="Type CAPTCHA"
-                                className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
-                              />
+                            <div className="mt-3 text-[11px] leading-4 text-slate-500">
+                              Tip: If Continue stays disabled, ensure you typed the CAPTCHA and there are no spaces.
                             </div>
-                          ) : null}
+                          </div>
                         </div>
                       ) : null}
 
@@ -685,7 +698,7 @@ export default function ResultsPage() {
                         </div>
                         <input
                           value={query}
-                          onChange={(e) => setQuery(e.target.value)}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
                           placeholder="Enrollment / name / seat"
                           className="mt-1 w-full bg-transparent text-sm outline-none"
                         />
@@ -695,7 +708,7 @@ export default function ResultsPage() {
                         <div className="text-xs text-slate-600">Status</div>
                         <select
                           value={statusFilter}
-                          onChange={(e) => setStatusFilter(e.target.value as any)}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setStatusFilter(e.target.value as any)}
                           className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
                         >
                           <option value="all">All</option>
@@ -710,7 +723,7 @@ export default function ResultsPage() {
                         <div className="text-xs text-slate-600">Sort</div>
                         <select
                           value={sortKey}
-                          onChange={(e) => setSortKey(e.target.value as any)}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortKey(e.target.value as any)}
                           className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
                         >
                           <option value="enrollment">Enrollment</option>

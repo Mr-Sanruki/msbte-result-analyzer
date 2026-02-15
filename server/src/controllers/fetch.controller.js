@@ -42,6 +42,10 @@ export const getCaptcha = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: { message: "Job not started" } });
   }
 
+  if (String(req.query?.refresh || "").trim() === "1") {
+    await job.refreshCaptcha();
+  }
+
   const pngBase64 = await job.getCaptchaPngBase64();
   return res.json({ pngBase64 });
 });
