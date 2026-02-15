@@ -5,6 +5,7 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/server.js",
+    "postinstall": "npx puppeteer browsers install chrome",
     "start": "node src/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
