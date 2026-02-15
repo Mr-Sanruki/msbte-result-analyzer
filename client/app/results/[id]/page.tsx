@@ -428,13 +428,51 @@ export default function ResultsPage() {
               <Card>
                 <CardHeader>
                   <div className="text-base font-semibold text-slate-900">Result Fetcher</div>
-                  <div className="text-sm text-slate-600"> || !captchaText.trim()
-                    Start the MSBTE browser flow, enter CAPTCHA in opened browser, then Continue here.
+                  <div className="text-sm text-slate-600">
+                    Start the MSBTE browser flow, enter CAPTCHA, then Continue here.
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 md:grid-cols-3">
-                    <div className="rounded-3xl border border-stop"}
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="text-xs text-slate-600">Job Status</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900">{state?.status || "-"}</div>
+                      <div className="mt-2 text-xs text-slate-600">
+                        Current enrollment: <span className="font-medium">{state?.currentEnrollment || "-"}</span>
+                      </div>
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="text-xs text-slate-600">Progress</div>
+                      <div className="mt-1 text-sm font-semibold text-slate-900">
+                        {doneCount}/{batch?.totalStudents || 0}
+                      </div>
+                      {state?.lastError ? (
+                        <div className="mt-2 text-xs text-red-600">Last error: {state.lastError}</div>
+                      ) : (
+                        <div className="mt-2 text-xs text-slate-600">&nbsp;</div>
+                      )}
+                    </div>
+
+                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
+                      <div className="text-xs text-slate-600">Controls</div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button size="sm" onClick={start} disabled={busy !== null}>
+                          <Play className="mr-2 h-4 w-4" />
+                          {busy === "start" ? "Starting..." : "Start"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={cont}
+                          disabled={busy !== null || state?.status !== "ready_for_captcha" || !captchaText.trim()}
+                        >
+                          {busy === "continue" ? "Continuing..." : "Continue"}
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={stop} disabled={busy !== null}>
+                          <Square className="mr-2 h-4 w-4" />
+                          {busy === "stop" ? "Stopping..." : "Stop"}
                         </Button>
                       </div>
 
@@ -478,57 +516,35 @@ export default function ResultsPage() {
                               </div>
                             </div>
                           ) : (
-                            <div className="mt-3 flex ilems-center justify-between gap-3">
-                              <div className="text-xs text-slate-600">Laading CAPTCHA...</div>
+                            <div className="mt-3 flex items-center justify-between gap-3">
+                              <div className="text-xs text-slate-600">
+                                {captchaError ? "Could not load CAPTCHA image." : "Loading CAPTCHA..."}
+                              </div>
                               <Button
-                                tyte="buttone
+                                type="button"
                                 variant="secondary"
                                 size="sm"
-                                onClick={() => loadCaptcha()-200 bg-white p-4">
+                                onClick={() => loadCaptcha()}
                                 disabled={busy !== null}
- <d                           >
-                                Retry
-                              iv class>
-                            </divN
-                          )}ame="text-xs text-slate-600">Job Status</div>
-                        <div c
-                      ) : null}lassName="mt-1 text-sm font-semibold text-slate-900">{state?.status || "-"}</div>
-                      <div className="mt-2 text-xs text-slate-600">
-                        Current enrollment: <span className="font-medium">{state?.currentEnrollment || "-"}</span>
-                      </div>
-                    </div>
-                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="text-xs text-slate-600">Progress</div>
-                      <div className="mt-1 text-sm font-semibold text-slate-900">
-                        {doneCount}/{batch?.totalStudents || 0}
-                      </div>
-                      {state?.lastError ? (
-                        <div className="mt-2 text-xs text-red-600">Last error: {state.lastError}</div>
-                      ) : (
-                        <div className="mt-2 text-xs text-slate-600">&nbsp;</div>
-                      )}
-                    </div>
+                              >
+                                Refresh CAPTCHA
+                              </Button>
+                            </div>
+                          )}
 
-                    <div className="rounded-3xl border border-slate-200 bg-white p-4">
-                      <div className="text-xs text-slate-600">Controls</div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <Button size="sm" onClick={start} disabled={busy !== null}>
-                          <Play className="mr-2 h-4 w-4" />
-                          {busy === "start" ? "Starting..." : "Start"}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          onClick={cont}
-                          disabled={busy !== null || state?.status !== "ready_for_captcha"}
-                        >
-                          {busy === "continue" ? "Continuing..." : "Continue"}
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={stop} disabled={busy !== null}>
-                          <Square className="mr-2 h-4 w-4" />
-                          {busy === "stop" ? "Stopping..." : "Stop"}
-                        </Button>
-                      </div>
+                          {!captchaPngBase64 ? (
+                            <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                              <div className="text-xs text-slate-600">CAPTCHA Text</div>
+                              <input
+                                value={captchaText}
+                                onChange={(e) => setCaptchaText(e.target.value)}
+                                placeholder="Type CAPTCHA"
+                                className="mt-1 h-10 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         <Button size="sm" variant="secondary" onClick={reparse} disabled={busy !== null}>
