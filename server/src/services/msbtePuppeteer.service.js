@@ -1,9 +1,20 @@
 import puppeteer from "puppeteer-core";
-import chromium from "@sparticuz/chromium";
 
 import { env } from "../config/env.js";
 import { ResultBatch } from "../models/ResultBatch.js";
 import { parseMsbteResultHtml } from "./msbteParse.service.js";
+
+let chromiumModule = null;
+async function getChromium() {
+  if (chromiumModule) return chromiumModule;
+  try {
+    const mod = await import("@sparticuz/chromium");
+    chromiumModule = mod?.default || mod;
+    return chromiumModule;
+  } catch {
+    return null;
+  }
+}
 
 function defaultSelectors() {
   return {
@@ -188,8 +199,18 @@ class MsBteFetchJob {
     this.total = batch.results.length;
 
     const isProd = env.NODE_ENV === "production";
+    const chromium = isProd ? await getChromium() : null;
+
+    if (isProd && !chromium) {
+      const err = new Error(
+        "Chromium runtime not available. Ensure '@sparticuz/chromium' is installed in production or provide PUPPETEER_EXECUTABLE_PATH."
+      );
+      err.statusCode = 500;
+      throw err;
+    }
+
     const executablePath = isProd
-      ? (process.env.PUPPETEER_EXECUTABLE_PATH || (await chromium.executablePath()))
+      ? process.env.PUPPETEER_EXECUTABLE_PATH || (await chromium.executablePath())
       : undefined;
 
     this.browser = await puppeteer.launch({

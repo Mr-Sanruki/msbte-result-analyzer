@@ -532,7 +532,8 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       }
 
       row.getCell(totalCol).value = typeof r.totalMarks === "number" ? r.totalMarks : "";
-      row.getCell(percentageCol).value = typeof r.percentage === "number" ? r.percentage : "";
+      row.getCell(percentageCol).value =
+        typeof r.percentage === "number" ? r.percentage : r.resultClass === "KT" ? "KT" : "";
       row.getCell(resultCol).value = r.resultClass || r.resultStatus || (r.errorMessage ? "Error" : "");
       row.commit();
     }

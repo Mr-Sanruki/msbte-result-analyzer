@@ -752,7 +752,12 @@ export default function ResultsPage() {
                         {filteredResults.map((r) => {
                           const isOpen = expanded === r.enrollmentNumber;
                           const subjects = r.subjectMarks ? Object.entries(r.subjectMarks) : [];
-                          const showPercent = typeof r.percentage === "number" ? `${r.percentage}%` : "-";
+                          const showPercent =
+                            typeof r.percentage === "number"
+                              ? `${r.percentage}%`
+                              : r.resultClass === "KT"
+                                ? "KT"
+                                : "-";
 
                           return (
                             <React.Fragment key={r.enrollmentNumber}>

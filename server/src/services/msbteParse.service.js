@@ -14,8 +14,11 @@ function pickIntOrText(s) {
   const t = normalizeSpaces(s);
   if (!t) return null;
   if (t === "-" || t === "--") return null;
-  const n = pickFirstNumber(t);
-  return n === null ? t : n;
+  // Preserve MSBTE special symbols (e.g. 020@, 022*, 037#) by only converting
+  // to number when the value is purely numeric.
+  const numericOnly = /^\d+(?:\.\d+)?$/.test(t);
+  if (numericOnly) return Number(t);
+  return t;
 }
 
 function normalizeSpaces(s) {
@@ -364,6 +367,21 @@ export function parseMsbteResultHtml(html) {
         ? percentage
         : derivedTotals?.percentage ?? null;
 
+  const hasKtStar = (() => {
+    for (const entry of Object.values(subjectMarks)) {
+      if (!entry || typeof entry !== "object") continue;
+      for (const v of Object.values(entry)) {
+        if (typeof v === "string" && v.includes("*")) return true;
+      }
+    }
+    return false;
+  })();
+
+  const isKt = !errorLike && (finalPercentage === null || hasKtStar);
+  if (isKt) {
+    resultStatus = "Fail";
+  }
+
   return {
     ok: !errorLike,
     name,
@@ -372,7 +390,7 @@ export function parseMsbteResultHtml(html) {
     percentage: finalPercentage,
     totalMarks: finalTotalMarks,
     resultStatus,
-    resultClass,
+    resultClass: isKt ? "KT" : resultClass,
     subjectMarks: Object.keys(subjectMarks).length ? subjectMarks : null,
     errorMessage: errorLike
       ? explicitErrorText || "MSBTE page indicates an error (possibly wrong CAPTCHA or invalid enrollment)"
