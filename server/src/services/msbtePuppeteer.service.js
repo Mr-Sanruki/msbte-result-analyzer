@@ -1,4 +1,5 @@
 import puppeteer from "puppeteer-core";
+import fs from "fs";
 
 import { env } from "../config/env.js";
 import { ResultBatch } from "../models/ResultBatch.js";
@@ -14,6 +15,49 @@ async function getChromium() {
   } catch {
     return null;
   }
+}
+
+function firstExistingPath(paths) {
+  for (const p of paths) {
+    if (!p) continue;
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+function resolveLocalBrowserExecutablePath() {
+  // Prefer explicit user config.
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+    const p = process.env.PUPPETEER_EXECUTABLE_PATH;
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      // ignore
+    }
+  }
+
+  // Windows: try common Chrome/Edge install locations.
+  if (process.platform === "win32") {
+    const pf = process.env.PROGRAMFILES || "C:\\Program Files";
+    const pf86 = process.env["PROGRAMFILES(X86)"] || "C:\\Program Files (x86)";
+    const lad = process.env.LOCALAPPDATA;
+
+    return firstExistingPath([
+      `${pf}\\Google\\Chrome\\Application\\chrome.exe`,
+      `${pf86}\\Google\\Chrome\\Application\\chrome.exe`,
+      lad ? `${lad}\\Google\\Chrome\\Application\\chrome.exe` : null,
+      `${pf}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      `${pf86}\\Microsoft\\Edge\\Application\\msedge.exe`,
+      lad ? `${lad}\\Microsoft\\Edge\\Application\\msedge.exe` : null,
+    ]);
+  }
+
+  // Linux/macOS are not currently auto-detected here.
+  return null;
 }
 
 function defaultSelectors() {
@@ -198,26 +242,29 @@ class MsBteFetchJob {
 
     this.total = batch.results.length;
 
-    const isProd = env.NODE_ENV === "production";
+    // On Windows, '@sparticuz/chromium' is not meant for local dev; it can resolve
+    // to a temp path that doesn't exist. Only enable chromium mode on non-win32.
+    const isProd = env.NODE_ENV === "production" && process.platform !== "win32";
     const chromium = isProd ? await getChromium() : null;
+    const localExec = resolveLocalBrowserExecutablePath();
 
-    if (isProd && !chromium) {
+    const executablePath = isProd
+      ? process.env.PUPPETEER_EXECUTABLE_PATH || (chromium ? await chromium.executablePath() : localExec)
+      : localExec;
+
+    if (!executablePath) {
       const err = new Error(
-        "Chromium runtime not available. Ensure '@sparticuz/chromium' is installed in production or provide PUPPETEER_EXECUTABLE_PATH."
+        "No browser executable found for Puppeteer. Install Google Chrome/Microsoft Edge or set PUPPETEER_EXECUTABLE_PATH."
       );
       err.statusCode = 500;
       throw err;
     }
 
-    const executablePath = isProd
-      ? process.env.PUPPETEER_EXECUTABLE_PATH || (await chromium.executablePath())
-      : undefined;
-
     this.browser = await puppeteer.launch({
-      headless: isProd ? chromium.headless : false,
-      defaultViewport: isProd ? chromium.defaultViewport : null,
+      headless: isProd && chromium ? chromium.headless : false,
+      defaultViewport: isProd && chromium ? chromium.defaultViewport : null,
       executablePath,
-      args: isProd ? chromium.args : ["--start-maximized"],
+      args: isProd && chromium ? chromium.args : ["--start-maximized"],
     });
 
     this.page = await this.browser.newPage();
