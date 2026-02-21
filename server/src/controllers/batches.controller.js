@@ -329,6 +329,30 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: { message: "Batch not found" } });
   }
 
+  function extractResultClassFromRawHtml(rawHtml) {
+    const html = String(rawHtml || "");
+    if (!html) return null;
+
+    const dvIdx = html.toLowerCase().indexOf("id=\"dvtotal0\"");
+    const dvIdx2 = dvIdx >= 0 ? dvIdx : html.toLowerCase().indexOf("id='dvtotal0'");
+    if (dvIdx2 >= 0) {
+      const slice = html.slice(dvIdx2, Math.min(html.length, dvIdx2 + 12000));
+
+      const preferred = slice.match(/colspan\s*=\s*"?4"?[^>]*>\s*<strong[^>]*>([^<]+)<\/strong>/i);
+      if (preferred && preferred[1]) return preferred[1].trim();
+
+      const strongMatches = Array.from(slice.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
+        .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
+        .filter(Boolean);
+      if (strongMatches.length) return strongMatches[strongMatches.length - 1] || null;
+    }
+
+    const strongMatches = Array.from(html.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
+      .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
+      .filter(Boolean);
+    return strongMatches.length ? strongMatches[strongMatches.length - 1] : null;
+  }
+
   function buildAnalysisWorksheet(wb) {
     const sheet = wb.addWorksheet("analysis");
     const results = batch.results || [];
@@ -336,37 +360,6 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
     const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
     const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
-    const extractResultClassFromRawHtml = (rawHtml) => {
-      const html = String(rawHtml || "");
-      if (!html) return null;
-
-      // Prefer the exact dvTotal0 layout cell used by MSBTE:
-      // <div id="dvTotal0"> ... <td colspan="4"><strong>FIRST CLASS WITH DISTINCTION</strong>
-      const dvIdx = html.toLowerCase().indexOf("id=\"dvtotal0\"");
-      const dvIdx2 = dvIdx >= 0 ? dvIdx : html.toLowerCase().indexOf("id='dvtotal0'");
-      if (dvIdx2 >= 0) {
-        const slice = html.slice(dvIdx2, Math.min(html.length, dvIdx2 + 12000));
-
-        const preferred = slice.match(/colspan\s*=\s*"?4"?[^>]*>\s*<strong[^>]*>([^<]+)<\/strong>/i);
-        if (preferred && preferred[1]) return preferred[1].trim();
-
-        // Fallback: take the last <strong> in dvTotal0 (usually contains class)
-        const strongMatches = Array.from(slice.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
-          .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
-          .filter(Boolean);
-        if (strongMatches.length) {
-          const last = strongMatches[strongMatches.length - 1];
-          return last || null;
-        }
-      }
-
-      // Last-resort: try full document
-      const strongMatches = Array.from(html.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
-        .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
-        .filter(Boolean);
-      return strongMatches.length ? strongMatches[strongMatches.length - 1] : null;
-    };
-
     const getEffectiveResultClass = (r) => {
       if (r?.resultClass) return r.resultClass;
 
@@ -397,8 +390,14 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
         .toLowerCase();
 
     const deriveClassFromPercentage = (r) => {
-      if (typeof r?.percentage !== "number") return null;
-      const p = r.percentage;
+      const raw = r?.percentage;
+      const p =
+        typeof raw === "number"
+          ? raw
+          : typeof raw === "string"
+            ? Number.parseFloat(raw)
+            : Number.NaN;
+      if (!Number.isFinite(p)) return null;
       if (p >= 75) return "first class with distinction";
       if (p >= 60) return "first class";
       if (p >= 50) return "second class";
@@ -567,9 +566,37 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
   function buildSubjectWiseFormattedWorkbook() {
     const wb = new ExcelJS.Workbook();
     buildAnalysisWorksheet(wb);
-    const sheet = wb.addWorksheet("subject wise");
+
+    // Debug/verification sheet: show actual MSBTE class text extracted from rawHtml
+    const classSheet = wb.addWorksheet("msbte class");
+    classSheet.addRow(["ROLL NO", "SEAT NO", "ENROLLMENT NO", "NAME", "PERCENTAGE", "MSBTE CLASS (HTML)"]);
+    classSheet.getRow(1).font = { bold: true };
+    classSheet.columns = [
+      { width: 10 },
+      { width: 16 },
+      { width: 18 },
+      { width: 28 },
+      { width: 12 },
+      { width: 30 },
+    ];
 
     const results = batch.results || [];
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const extracted = r?.rawHtml ? extractResultClassFromRawHtml(r.rawHtml) : null;
+      classSheet.addRow([
+        i + 1,
+        r.enrollmentNumber || "",
+        r.marksheetEnrollmentNumber || "",
+        r.name || "",
+        typeof r.percentage === "number" ? r.percentage : r.percentage || "",
+        extracted || "",
+      ]);
+    }
+
+    const sheet = wb.addWorksheet("subject wise");
+
+    // Note: keep using the same results array for subject-wise export
 
     // Determine subject order: use the first row that has subjectMarks as the primary order,
     // then append any new subjects encountered later.
