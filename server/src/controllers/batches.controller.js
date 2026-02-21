@@ -336,16 +336,56 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
     const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
     const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
+    const extractResultClassFromRawHtml = (rawHtml) => {
+      const html = String(rawHtml || "");
+      if (!html) return null;
+
+      // Prefer the exact dvTotal0 layout cell used by MSBTE:
+      // <div id="dvTotal0"> ... <td colspan="4"><strong>FIRST CLASS WITH DISTINCTION</strong>
+      const dvIdx = html.toLowerCase().indexOf("id=\"dvtotal0\"");
+      const dvIdx2 = dvIdx >= 0 ? dvIdx : html.toLowerCase().indexOf("id='dvtotal0'");
+      if (dvIdx2 >= 0) {
+        const slice = html.slice(dvIdx2, Math.min(html.length, dvIdx2 + 12000));
+
+        const preferred = slice.match(/colspan\s*=\s*"?4"?[^>]*>\s*<strong[^>]*>([^<]+)<\/strong>/i);
+        if (preferred && preferred[1]) return preferred[1].trim();
+
+        // Fallback: take the last <strong> in dvTotal0 (usually contains class)
+        const strongMatches = Array.from(slice.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
+          .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
+          .filter(Boolean);
+        if (strongMatches.length) {
+          const last = strongMatches[strongMatches.length - 1];
+          return last || null;
+        }
+      }
+
+      // Last-resort: try full document
+      const strongMatches = Array.from(html.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
+        .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
+        .filter(Boolean);
+      return strongMatches.length ? strongMatches[strongMatches.length - 1] : null;
+    };
+
     const getEffectiveResultClass = (r) => {
       if (r?.resultClass) return r.resultClass;
+
+      // First try our HTML parser (keeps behavior consistent)
       if (r?.rawHtml) {
         try {
           const parsed = parseMsbteResultHtml(r.rawHtml);
-          return parsed?.resultClass || null;
+          if (parsed?.resultClass) return parsed.resultClass;
         } catch {
-          return null;
+          // ignore
         }
       }
+
+      // Guaranteed fallback: extract from the exact dvTotal0 markup
+      if (r?.rawHtml) {
+        const extracted = extractResultClassFromRawHtml(r.rawHtml);
+        if (extracted) return extracted;
+      }
+
       return null;
     };
 
@@ -358,7 +398,10 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
 
     const classText = (r) => normalizeClassText(getEffectiveResultClass(r));
 
-    const atkt = results.filter((r) => classText(r).trim().toUpperCase() === "kt" || classText(r) === "kt").length;
+    const atkt = results.filter((r) => {
+      const c = classText(r);
+      return c === "kt" || c.includes(" atkt") || c.includes("atkt") || c.includes(" kt");
+    }).length;
 
     const firstDist = results.filter((r) => {
       const c = classText(r);
