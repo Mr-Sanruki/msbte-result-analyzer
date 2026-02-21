@@ -82,111 +82,111 @@ export default function UploadPage() {
             <div className="grid gap-6 lg:grid-cols-3">
               <div className="lg:col-span-2">
                 <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
-                  <FileSpreadsheet className="h-4 w-4 text-blue-700" />
-                  Upload
-                </div>
-                <div className="text-sm text-slate-600">Upload .xlsx with Enrollment Numbers</div>
-              </CardHeader>
-              <CardContent>
-                <div
-                  className={
-                    "rounded-3xl border border-dashed bg-gradient-to-b from-white to-slate-50 p-10 text-center shadow-sm transition " +
-                    (dragOver
-                      ? "border-blue-600 ring-2 ring-blue-600/20"
-                      : "border-slate-300")
-                  }
-                  onDragEnter={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOver(true);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOver(true);
-                  }}
-                  onDragLeave={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOver(false);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setDragOver(false);
-                    const f = e.dataTransfer.files?.[0] || null;
-                    pickFile(f);
-                  }}
-                >
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-blue-50 text-blue-700">
-                    <Upload className="h-6 w-6" />
-                  </div>
-                  <div className="text-sm font-semibold text-slate-900">Drag & drop Excel file here</div>
-                  <div className="mt-1 text-sm text-slate-600">or click to browse</div>
-                  <input
-                    className="mt-6 block w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm"
-                    type="file"
-                    accept=".xlsx"
-                    onChange={(e) => pickFile(e.target.files?.[0] || null)}
-                  />
-
-                  {file ? (
-                    <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-800">
-                      Selected: <span className="font-medium">{file.name}</span>
+                  <CardHeader>
+                    <div className="flex items-center gap-2 text-base font-semibold text-slate-900">
+                      <FileSpreadsheet className="h-4 w-4 text-blue-700" />
+                      Upload
                     </div>
-                  ) : null}
-
-                  {typeof progress === "number" ? (
-                    <div className="mt-4">
-                      <div className="flex items-center justify-between text-xs text-slate-600">
-                        <div>Uploading</div>
-                        <div className="tabular-nums">{progress}%</div>
+                    <div className="text-sm text-slate-600">Upload .xlsx with Seat Numbers (preferred)</div>
+                  </CardHeader>
+                  <CardContent>
+                    <div
+                      className={
+                        "rounded-3xl border border-dashed bg-gradient-to-b from-white to-slate-50 p-10 text-center shadow-sm transition " +
+                        (dragOver
+                          ? "border-blue-600 ring-2 ring-blue-600/20"
+                          : "border-slate-300")
+                      }
+                      onDragEnter={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOver(true);
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOver(true);
+                      }}
+                      onDragLeave={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOver(false);
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOver(false);
+                        const f = e.dataTransfer.files?.[0] || null;
+                        pickFile(f);
+                      }}
+                    >
+                      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-3xl bg-blue-50 text-blue-700">
+                        <Upload className="h-6 w-6" />
                       </div>
-                      <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
-                        <div className="h-2 rounded-full bg-blue-600" style={{ width: `${progress}%` }} />
+                      <div className="text-sm font-semibold text-slate-900">Drag & drop Excel file here</div>
+                      <div className="mt-1 text-sm text-slate-600">or click to browse</div>
+                      <input
+                        className="mt-6 block w-full cursor-pointer rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm"
+                        type="file"
+                        accept=".xlsx"
+                        onChange={(e) => pickFile(e.target.files?.[0] || null)}
+                      />
+
+                      {file ? (
+                        <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-800">
+                          Selected: <span className="font-medium">{file.name}</span>
+                        </div>
+                      ) : null}
+
+                      {typeof progress === "number" ? (
+                        <div className="mt-4">
+                          <div className="flex items-center justify-between text-xs text-slate-600">
+                            <div>Uploading</div>
+                            <div className="tabular-nums">{progress}%</div>
+                          </div>
+                          <div className="mt-2 h-2 w-full rounded-full bg-slate-100">
+                            <div className="h-2 rounded-full bg-blue-600" style={{ width: `${progress}%` }} />
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {error ? <div className="mt-4 text-sm text-red-600">{error}</div> : null}
+
+                      <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+                        <Button disabled={!file || progress !== null} onClick={upload}>
+                          <Wand2 className="mr-2 h-4 w-4" />
+                          {progress === null ? "Upload & Extract" : progress < 100 ? `Uploading ${progress}%` : "Uploaded"}
+                        </Button>
+                        {batchId ? (
+                          <Button variant="secondary" onClick={() => router.push(`/results/${batchId}`)}>
+                            View Batch
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
-                  ) : null}
 
-                  {error ? <div className="mt-4 text-sm text-red-600">{error}</div> : null}
+                    {enrollments ? (
+                      <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <div className="text-base font-semibold text-slate-900">Preview</div>
+                            <div className="text-sm text-slate-600">
+                              Extracted seat numbers (showing up to 20)
+                            </div>
+                          </div>
+                          <div className="text-sm font-medium text-slate-900">{enrollments.length} students</div>
+                        </div>
 
-                  <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-                    <Button disabled={!file || progress !== null} onClick={upload}>
-                      <Wand2 className="mr-2 h-4 w-4" />
-                      {progress === null ? "Upload & Extract" : progress < 100 ? `Uploading ${progress}%` : "Uploaded"}
-                    </Button>
-                    {batchId ? (
-                      <Button variant="secondary" onClick={() => router.push(`/results/${batchId}`)}>
-                        View Batch
-                      </Button>
+                        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          {enrollments.slice(0, 20).map((e) => (
+                            <div key={e} className="rounded-2xl bg-slate-50 px-4 py-2 text-sm text-slate-800">
+                              {e}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     ) : null}
-                  </div>
-                </div>
-
-              {enrollments ? (
-                <div className="mt-6 rounded-3xl border border-slate-200 bg-white p-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-base font-semibold text-slate-900">Preview</div>
-                      <div className="text-sm text-slate-600">
-                        Extracted enrollment numbers (showing up to 20)
-                      </div>
-                    </div>
-                    <div className="text-sm font-medium text-slate-900">{enrollments.length} students</div>
-                  </div>
-
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                    {enrollments.slice(0, 20).map((e) => (
-                      <div key={e} className="rounded-2xl bg-slate-50 px-4 py-2 text-sm text-slate-800">
-                        {e}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              </CardContent>
+                  </CardContent>
                 </Card>
               </div>
 
@@ -203,7 +203,7 @@ export default function UploadPage() {
                     <div className="grid gap-3 text-sm">
                       <div className="rounded-2xl bg-blue-50 px-4 py-3 text-slate-800">
                         <div className="text-xs font-semibold text-blue-700">Step 1</div>
-                        <div className="mt-1">Upload your Excel (.xlsx) with enrollment numbers</div>
+                        <div className="mt-1">Upload your Excel (.xlsx) with seat numbers</div>
                       </div>
                       <div className="rounded-2xl bg-violet-50 px-4 py-3 text-slate-800">
                         <div className="text-xs font-semibold text-violet-700">Step 2</div>

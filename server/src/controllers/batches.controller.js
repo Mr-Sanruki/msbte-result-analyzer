@@ -72,6 +72,7 @@ export const reparseBatch = asyncHandler(async (req, res) => {
     const parsed = parseMsbteResultHtml(r.rawHtml);
     r.errorMessage = parsed.ok ? null : parsed.errorMessage || "Parse failed";
     if (parsed.name) r.name = parsed.name;
+    if (parsed.enrollmentNumber) r.marksheetEnrollmentNumber = parsed.enrollmentNumber;
     if (parsed.seatNumber) r.seatNumber = parsed.seatNumber;
     if (typeof parsed.totalMarks === "number") r.totalMarks = parsed.totalMarks;
     if (typeof parsed.percentage === "number") r.percentage = parsed.percentage;
@@ -328,8 +329,150 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: { message: "Batch not found" } });
   }
 
+  function buildAnalysisWorksheet(wb) {
+    const sheet = wb.addWorksheet("analysis");
+    const results = batch.results || [];
+
+    const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
+    const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
+    const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
+    const atkt = results.filter((r) => String(r.resultClass || "").trim().toUpperCase() === "KT").length;
+
+    const cls = (s) => String(s || "").toLowerCase();
+    const firstDist = results.filter((r) => cls(r.resultClass).includes("distinction")).length;
+    const first = results.filter((r) => cls(r.resultClass).includes("first") && !cls(r.resultClass).includes("distinction")).length;
+    const second = results.filter((r) => cls(r.resultClass).includes("second")).length;
+    const passClass = results.filter((r) => cls(r.resultClass).includes("pass") && !cls(r.resultClass).includes("fail")).length;
+
+    const passPct = appeared > 0 ? Number(((pass / appeared) * 100).toFixed(2)) : 0;
+    const passWithAtktPct = appeared > 0 ? Number((((pass + atkt) / appeared) * 100).toFixed(2)) : 0;
+
+    // Header rows (match reference layout)
+    // Row 1-3 contain wrapped header labels, Row 4 contains column numbering (1)-(10)
+    sheet.getRow(1).height = 20;
+    sheet.getRow(2).height = 20;
+    sheet.getRow(3).height = 20;
+    sheet.getRow(4).height = 18;
+
+    // Single headers merged vertically across rows 1-3
+    sheet.mergeCells("A1:A3");
+    sheet.getCell("A1").value = "Class/\nYear";
+
+    sheet.mergeCells("B1:B3");
+    sheet.getCell("B1").value = "No. of\nStudents\nregistered for";
+
+    sheet.mergeCells("C1:C3");
+    sheet.getCell("C1").value = "No. of\nstudents\nactually\nappeared";
+
+    sheet.mergeCells("D1:D3");
+    sheet.getCell("D1").value = "1st class\nwith\nDistinction";
+
+    // Group header: No. of students passed (E-G)
+    sheet.mergeCells("E1:G1");
+    sheet.getCell("E1").value = "No. of students passed";
+    sheet.mergeCells("E2:E3");
+    sheet.getCell("E2").value = "1st class";
+    sheet.mergeCells("F2:F3");
+    sheet.getCell("F2").value = "2nd\nclass";
+    sheet.mergeCells("G2:G3");
+    sheet.getCell("G2").value = "Pass\nclass";
+
+    sheet.mergeCells("H1:H3");
+    sheet.getCell("H1").value = "Pass\nWithout\nATKT";
+
+    sheet.mergeCells("I1:I3");
+    sheet.getCell("I1").value = "With\nATKT";
+
+    sheet.mergeCells("J1:J3");
+    sheet.getCell("J1").value = "Total\nstudent\npassed";
+
+    sheet.mergeCells("K1:K3");
+    sheet.getCell("K1").value = "Total\nNo. of\nstudent\nFailed";
+
+    sheet.mergeCells("L1:L3");
+    sheet.getCell("L1").value = "Total\npassing\n%\nwithout";
+
+    sheet.mergeCells("M1:M3");
+    sheet.getCell("M1").value = "Total\npassing\n%\nwith\nATKT";
+
+    // Row 4 numbering
+    const nums = {
+      A4: "(1)",
+      B4: "(2)",
+      C4: "(3)",
+      D4: "(4)",
+      E4: "(5)",
+      F4: "(6)",
+      G4: "(7)",
+      H4: "(8) =",
+      I4: "(9)",
+      J4: "(10)",
+    };
+    for (const [addr, v] of Object.entries(nums)) {
+      sheet.getCell(addr).value = v;
+    }
+
+    // Data row (Row 5)
+    sheet.getRow(5).height = 18;
+    sheet.getCell("A5").value = String(batch._id);
+    sheet.getCell("B5").value = "";
+    sheet.getCell("C5").value = appeared;
+    sheet.getCell("D5").value = firstDist;
+    sheet.getCell("E5").value = first;
+    sheet.getCell("F5").value = second;
+    sheet.getCell("G5").value = passClass;
+    sheet.getCell("H5").value = pass;
+    sheet.getCell("I5").value = atkt;
+    sheet.getCell("J5").value = pass + atkt;
+    sheet.getCell("K5").value = fail;
+    sheet.getCell("L5").value = `${passPct}%`;
+    sheet.getCell("M5").value = `${passWithAtktPct}%`;
+
+    // Styling: bold headers, wrap, center, borders
+    const headerRows = [1, 2, 3, 4];
+    for (const r of headerRows) {
+      sheet.getRow(r).font = { bold: true };
+      sheet.getRow(r).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    }
+    sheet.getRow(5).alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+
+    const allRows = 5;
+    const allCols = 13; // A-M
+    for (let r = 1; r <= allRows; r++) {
+      for (let c = 1; c <= allCols; c++) {
+        const cell = sheet.getRow(r).getCell(c);
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      }
+    }
+
+    // Column widths tuned to reference image
+    sheet.columns = [
+      { key: "A", width: 12 },
+      { key: "B", width: 14 },
+      { key: "C", width: 16 },
+      { key: "D", width: 14 },
+      { key: "E", width: 12 },
+      { key: "F", width: 10 },
+      { key: "G", width: 10 },
+      { key: "H", width: 12 },
+      { key: "I", width: 10 },
+      { key: "J", width: 14 },
+      { key: "K", width: 14 },
+      { key: "L", width: 16 },
+      { key: "M", width: 16 },
+    ];
+
+    sheet.views = [{ state: "frozen", ySplit: 4 }];
+  }
+
   function buildSubjectWiseFormattedWorkbook() {
     const wb = new ExcelJS.Workbook();
+    buildAnalysisWorksheet(wb);
     const sheet = wb.addWorksheet("subject wise");
 
     const results = batch.results || [];
@@ -403,8 +546,8 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
 
     // Row 2: Base headers + MARKS merged
     sheet.getRow(2).getCell(1).value = "ROLL NO";
-    sheet.getRow(2).getCell(2).value = "ENROLLMENT";
-    sheet.getRow(2).getCell(3).value = "SEAT NO";
+    sheet.getRow(2).getCell(2).value = "SEAT NO";
+    sheet.getRow(2).getCell(3).value = "ENROLLMENT NO";
     sheet.getRow(2).getCell(4).value = "NAME";
     if (marksWidth > 0) {
       sheet.getRow(2).getCell(startSubjectCol).value = "MARKS";
@@ -512,7 +655,7 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       const row = sheet.getRow(startRow + i);
       row.getCell(1).value = i + 1;
       row.getCell(2).value = r.enrollmentNumber || "";
-      row.getCell(3).value = r.seatNumber || "";
+      row.getCell(3).value = r.marksheetEnrollmentNumber || "";
       row.getCell(4).value = r.name || "";
 
       cursor = startSubjectCol;

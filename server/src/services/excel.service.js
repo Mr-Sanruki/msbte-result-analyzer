@@ -23,6 +23,9 @@ export async function extractEnrollmentNumbersFromXlsx(buffer) {
 
   headerRow.eachCell((cell, colNumber) => {
     const header = normalizeCell(cell.value).toLowerCase();
+    if (!enrollmentCol && header.includes("seat")) {
+      enrollmentCol = colNumber;
+    }
     if (!enrollmentCol && header.includes("enroll")) {
       enrollmentCol = colNumber;
     }
@@ -51,7 +54,7 @@ export async function extractEnrollmentNumbersFromXlsx(buffer) {
 
   if (enrollments.length === 0) {
     const err = new Error(
-      "No enrollment numbers found. Ensure the first sheet has a header with 'Enrollment' or the enrollment numbers in the first column."
+      "No seat/enrollment numbers found. Ensure the first sheet has a header with 'Seat'/'Enrollment' or the numbers in the first column."
     );
     err.statusCode = 400;
     throw err;

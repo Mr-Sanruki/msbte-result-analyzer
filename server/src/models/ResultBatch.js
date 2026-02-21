@@ -4,6 +4,7 @@ const studentResultSchema = new mongoose.Schema(
   {
     name: { type: String, trim: true },
     enrollmentNumber: { type: String, required: true, trim: true },
+    marksheetEnrollmentNumber: { type: String, trim: true },
     seatNumber: { type: String, trim: true },
     subjectMarks: { type: Object },
     totalMarks: { type: Number },

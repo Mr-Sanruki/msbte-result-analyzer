@@ -63,6 +63,7 @@ type BatchAnalytics = {
 
 type StudentResult = {
   enrollmentNumber: string;
+  marksheetEnrollmentNumber?: string;
   name?: string;
   seatNumber?: string;
   percentage?: number;
@@ -275,13 +276,55 @@ export default function ResultsPage() {
   React.useEffect(() => {
     if (authLoading || !teacher) return;
 
-    const t = setInterval(() => {
-      loadBatch().catch(() => null);
-      loadState().catch(() => null);
-    }, 2000);
-    return () => clearInterval(t);
+    let cancelled = false;
+    let consecutive429 = 0;
+    let tick = 0;
+
+    const run = async () => {
+      if (cancelled) return;
+
+      const status = state?.status;
+      const isActive = status && status !== "idle" && status !== "completed" && status !== "failed";
+
+      // Poll state more frequently only while the fetch job is running.
+      // Refresh full batch less often because it can be large.
+      const baseDelayMs = isActive ? 3500 : 15000;
+      const backoffMs = Math.min(consecutive429 * 5000, 30000);
+      const delayMs = baseDelayMs + backoffMs;
+
+      try {
+        await loadState();
+      } catch (err: any) {
+        if (err?.response?.status === 429) {
+          consecutive429++;
+        }
+      }
+
+      // Refresh batch occasionally (and more often while active), but not every tick.
+      tick++;
+      const shouldRefreshBatch = isActive ? tick % 2 === 0 : tick % 4 === 0;
+      if (shouldRefreshBatch) {
+        try {
+          await loadBatch();
+          consecutive429 = 0;
+        } catch (err: any) {
+          if (err?.response?.status === 429) {
+            consecutive429++;
+          }
+        }
+      }
+
+      if (!cancelled) {
+        setTimeout(run, delayMs);
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batchId, authLoading, teacher]);
+  }, [batchId, authLoading, teacher, state?.status]);
 
   React.useEffect(() => {
     if (authLoading || !teacher) return;
@@ -366,6 +409,7 @@ export default function ResultsPage() {
       if (!q) return true;
       return (
         r.enrollmentNumber?.toLowerCase().includes(q) ||
+        (r.marksheetEnrollmentNumber || "").toLowerCase().includes(q) ||
         (r.name || "").toLowerCase().includes(q) ||
         (r.seatNumber || "").toLowerCase().includes(q)
       );
@@ -440,7 +484,7 @@ export default function ResultsPage() {
                       <div className="text-xs text-slate-600">Job Status</div>
                       <div className="mt-1 text-sm font-semibold text-slate-900">{state?.status || "-"}</div>
                       <div className="mt-2 text-xs text-slate-600">
-                        Current enrollment: <span className="font-medium">{state?.currentEnrollment || "-"}</span>
+                        Current seat no: <span className="font-medium">{state?.currentEnrollment || "-"}</span>
                       </div>
                     </div>
 
@@ -699,7 +743,7 @@ export default function ResultsPage() {
                         <input
                           value={query}
                           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuery(e.target.value)}
-                          placeholder="Enrollment / name / seat"
+                          placeholder="Seat no / name"
                           className="mt-1 w-full bg-transparent text-sm outline-none"
                         />
                       </div>
@@ -726,7 +770,7 @@ export default function ResultsPage() {
                           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortKey(e.target.value as any)}
                           className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
                         >
-                          <option value="enrollment">Enrollment</option>
+                          <option value="enrollment">Seat No</option>
                           <option value="percentage_desc">Percentage (high to low)</option>
                           <option value="percentage_asc">Percentage (low to high)</option>
                         </select>
@@ -738,8 +782,8 @@ export default function ResultsPage() {
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 text-xs text-slate-600">
                         <tr>
-                          <th className="px-4 py-3">Enrollment</th>
-                          <th className="px-4 py-3">Seat</th>
+                          <th className="px-4 py-3">Seat No</th>
+                          <th className="px-4 py-3">Enrollment No</th>
                           <th className="px-4 py-3">Name</th>
                           <th className="px-4 py-3">% / Class</th>
                           <th className="px-4 py-3">Status</th>
@@ -763,7 +807,7 @@ export default function ResultsPage() {
                             <React.Fragment key={r.enrollmentNumber}>
                               <tr className="border-t border-slate-200">
                                 <td className="px-4 py-3 font-medium text-slate-900">{r.enrollmentNumber}</td>
-                                <td className="px-4 py-3 text-slate-700">{r.seatNumber || "-"}</td>
+                                <td className="px-4 py-3 text-slate-700">{r.marksheetEnrollmentNumber || "-"}</td>
                                 <td className="px-4 py-3 text-slate-700">{r.name || "-"}</td>
                                 <td className="px-4 py-3 text-slate-700">
                                   <div className="font-medium text-slate-900">{showPercent}</div>

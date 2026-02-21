@@ -297,19 +297,67 @@ export function parseMsbteResultHtml(html) {
   // Parse subject-wise obtained marks from the main marks table
   // Rows look like: [SubjectName, FA-TH max, FA-TH obt, SA-TH max, SA-TH obt, TOTAL max, TOTAL obt, FA-PR max, FA-PR obt, SA-PR max, SA-PR obt, SLA max, SLA obt, Credits]
   const subjectMarks = {};
-  const marksTable = $("#dvMain0 table").first();
-  marksTable
-    .find("tr")
-    .toArray()
-    .forEach((tr, idx) => {
-      // Skip header rows (first 3)
-      if (idx < 3) return;
-      const tds = $(tr).find("td");
-      if (tds.length < 8) return;
-      const subjectName = pickCleanText($(tds[0]).text());
-      if (!subjectName) return;
+  function findMarksTable() {
+    const candidates = [];
 
-      const cells = tds
+    // Prefer dvMain0 if present, but fall back to scanning all tables (some layouts differ)
+    const primary = $("#dvMain0 table").toArray();
+    const allTables = $("table").toArray();
+    const pool = [...primary, ...allTables];
+
+    const seen = new Set();
+    for (const tbl of pool) {
+      if (seen.has(tbl)) continue;
+      seen.add(tbl);
+      const hay = normalizeSpaces($(tbl).text()).toLowerCase();
+      const score =
+        (hay.includes("fa-th") ? 3 : 0) +
+        (hay.includes("sa-th") ? 2 : 0) +
+        (hay.includes("total") ? 1 : 0) +
+        (hay.includes("credits") ? 1 : 0) +
+        (hay.includes("fa-pr") ? 1 : 0);
+
+      if (score <= 0) continue;
+
+      // Try to ensure it looks like a marks grid: at least one row with many cells
+      const maxCells = $(tbl)
+        .find("tr")
+        .toArray()
+        .reduce((m, tr) => Math.max(m, $(tr).find("th,td").length), 0);
+
+      candidates.push({ tbl, score, maxCells });
+    }
+
+    candidates.sort((a, b) => b.score - a.score || b.maxCells - a.maxCells);
+    return candidates[0]?.tbl || null;
+  }
+
+  const marksTableEl = findMarksTable();
+  if (marksTableEl) {
+    const rows = $(marksTableEl).find("tr").toArray();
+
+    for (const tr of rows) {
+      const cellsNodes = $(tr).find("th,td");
+      if (cellsNodes.length < 8) continue;
+
+      const firstCellText = pickCleanText($(cellsNodes[0]).text());
+      if (!firstCellText) continue;
+
+      const firstHay = normalizeSpaces(firstCellText).toLowerCase();
+      // Skip header-like rows
+      if (
+        firstHay === "subject" ||
+        firstHay === "subjects" ||
+        firstHay.includes("subject name") ||
+        firstHay.includes("max") ||
+        firstHay.includes("obt") ||
+        firstHay.includes("theory") ||
+        firstHay.includes("practical")
+      ) {
+        continue;
+      }
+
+      const cells = cellsNodes
         .toArray()
         .slice(1)
         .map((td) => normalizeSpaces($(td).text()));
@@ -330,8 +378,9 @@ export function parseMsbteResultHtml(html) {
         credits: pickIntOrText(cells[12]),
       };
 
-      subjectMarks[subjectName] = entry;
-    });
+      subjectMarks[firstCellText] = entry;
+    }
+  }
 
   const derivedTotals = (() => {
     let sumObt = 0;

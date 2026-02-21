@@ -310,19 +310,19 @@ class MsBteFetchJob {
       return;
     }
 
-    // Ensure mode is set to Enrollment No if a mode dropdown selector is provided.
-    // MSBTE uses value "2" for Enrollment No.
+    const modeValue = String(process.env.MSBTE_MODE_VALUE || "1");
     if (this.selectors.modeSelect) {
       try {
         await this.page.waitForSelector(this.selectors.modeSelect, { timeout: 15000 });
-        await this.page.select(this.selectors.modeSelect, "2");
+        await this.page.select(this.selectors.modeSelect, modeValue);
         await this.page.waitForFunction(
-          (sel) => {
+          (sel, expected) => {
             const el = document.querySelector(sel);
-            return !!el && el.value === "2";
+            return !!el && String(el.value) === String(expected);
           },
           { timeout: 15000 },
-          this.selectors.modeSelect
+          this.selectors.modeSelect,
+          modeValue
         );
       } catch {
         // ignore and continue; page might not have the dropdown in some sessions
@@ -342,11 +342,11 @@ class MsBteFetchJob {
 
       if (i === attempts - 1) {
         throw new Error(
-          "Failed to fill enrollment input. The page might be clearing the field after selection; re-check selectors for txtEnrollOrSeatNo."
+          "Failed to fill input. The page might be clearing the field after selection; re-check selectors for txtEnrollOrSeatNo."
         );
       }
 
-      await this.page.waitForTimeout(500);
+      await this.page.waitForTimeout(150);
     }
 
     this.status = "ready_for_captcha";
@@ -415,6 +415,9 @@ class MsBteFetchJob {
             "results.$.fetchedAt": new Date(),
             "results.$.errorMessage": parsed.ok ? null : parsed.errorMessage || "Parse failed",
             ...(parsed.name ? { "results.$.name": parsed.name } : {}),
+            ...(parsed.enrollmentNumber
+              ? { "results.$.marksheetEnrollmentNumber": parsed.enrollmentNumber }
+              : {}),
             ...(parsed.seatNumber ? { "results.$.seatNumber": parsed.seatNumber } : {}),
             ...(typeof parsed.totalMarks === "number" ? { "results.$.totalMarks": parsed.totalMarks } : {}),
             ...(typeof parsed.percentage === "number" ? { "results.$.percentage": parsed.percentage } : {}),

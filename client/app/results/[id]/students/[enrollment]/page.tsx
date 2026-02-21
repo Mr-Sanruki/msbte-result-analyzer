@@ -32,6 +32,7 @@ type SubjectMarksEntry = {
 
 type StudentResult = {
   enrollmentNumber: string;
+  marksheetEnrollmentNumber?: string | null;
   seatNumber?: string | null;
   name?: string | null;
   totalMarks?: number | null;
@@ -101,7 +102,7 @@ export default function StudentDetailPage() {
           title="Student Profile"
           subtitle={
             <>
-              Enrollment: <span className="font-medium text-slate-900">{enrollment || "-"}</span>
+              Seat No: <span className="font-medium text-slate-900">{enrollment || "-"}</span>
             </>
           }
           backHref={`/results/${batchId}`}
@@ -118,7 +119,7 @@ export default function StudentDetailPage() {
           ) : (
             <div className="grid gap-6">
               <FadeIn>
-                <div className="grid gap-4 md:grid-cols-4">
+                <div className="grid gap-4 md:grid-cols-5">
                   <StatCard
                     tone="blue"
                     label="Name"
@@ -128,7 +129,13 @@ export default function StudentDetailPage() {
                   <StatCard
                     tone="purple"
                     label="Seat No"
-                    value={<span className="text-base">{student.seatNumber || "-"}</span>}
+                    value={<span className="text-base">{student.enrollmentNumber || "-"}</span>}
+                    icon={<IdCard className="h-5 w-5" />}
+                  />
+                  <StatCard
+                    tone="purple"
+                    label="Enrollment No"
+                    value={<span className="text-base">{student.marksheetEnrollmentNumber || "-"}</span>}
                     icon={<IdCard className="h-5 w-5" />}
                   />
                   <StatCard
