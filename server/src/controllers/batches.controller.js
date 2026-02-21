@@ -336,7 +336,18 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
     const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
     const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
-    const atkt = results.filter((r) => String(r.resultClass || "").trim().toUpperCase() === "KT").length;
+    const getEffectiveResultClass = (r) => {
+      if (r?.resultClass) return r.resultClass;
+      if (r?.rawHtml) {
+        try {
+          const parsed = parseMsbteResultHtml(r.rawHtml);
+          return parsed?.resultClass || null;
+        } catch {
+          return null;
+        }
+      }
+      return null;
+    };
 
     const normalizeClassText = (s) =>
       String(s || "")
@@ -345,7 +356,9 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
         .trim()
         .toLowerCase();
 
-    const classText = (r) => normalizeClassText(r?.resultClass);
+    const classText = (r) => normalizeClassText(getEffectiveResultClass(r));
+
+    const atkt = results.filter((r) => classText(r).trim().toUpperCase() === "kt" || classText(r) === "kt").length;
 
     const firstDist = results.filter((r) => {
       const c = classText(r);
