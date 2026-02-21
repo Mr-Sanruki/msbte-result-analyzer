@@ -338,11 +338,34 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
     const atkt = results.filter((r) => String(r.resultClass || "").trim().toUpperCase() === "KT").length;
 
-    const cls = (s) => String(s || "").toLowerCase();
-    const firstDist = results.filter((r) => cls(r.resultClass).includes("distinction")).length;
-    const first = results.filter((r) => cls(r.resultClass).includes("first") && !cls(r.resultClass).includes("distinction")).length;
-    const second = results.filter((r) => cls(r.resultClass).includes("second")).length;
-    const passClass = results.filter((r) => cls(r.resultClass).includes("pass") && !cls(r.resultClass).includes("fail")).length;
+    const normalizeClassText = (s) =>
+      String(s || "")
+        .replace(/\u00a0/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+
+    const classText = (r) => normalizeClassText(r?.resultClass);
+
+    const firstDist = results.filter((r) => {
+      const c = classText(r);
+      return c.includes("first class with distinction") || (c.includes("distinction") && c.includes("first"));
+    }).length;
+
+    const first = results.filter((r) => {
+      const c = classText(r);
+      return (c.includes("first class") || c.includes("first")) && !c.includes("distinction");
+    }).length;
+
+    const second = results.filter((r) => {
+      const c = classText(r);
+      return c.includes("second class") || c.includes("second");
+    }).length;
+
+    const passClass = results.filter((r) => {
+      const c = classText(r);
+      return (c.includes("pass class") || c === "pass") && !c.includes("fail");
+    }).length;
 
     const passPct = appeared > 0 ? Number(((pass / appeared) * 100).toFixed(2)) : 0;
     const passWithAtktPct = appeared > 0 ? Number((((pass + atkt) / appeared) * 100).toFixed(2)) : 0;
