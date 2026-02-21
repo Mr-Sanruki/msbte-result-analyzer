@@ -396,7 +396,22 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
         .trim()
         .toLowerCase();
 
-    const classText = (r) => normalizeClassText(getEffectiveResultClass(r));
+    const deriveClassFromPercentage = (r) => {
+      if (typeof r?.percentage !== "number") return null;
+      const p = r.percentage;
+      if (p >= 75) return "first class with distinction";
+      if (p >= 60) return "first class";
+      if (p >= 50) return "second class";
+      if (p >= 40) return "pass class";
+      return "fail";
+    };
+
+    const classText = (r) => {
+      const storedOrHtml = normalizeClassText(getEffectiveResultClass(r));
+      if (storedOrHtml) return storedOrHtml;
+      const derived = deriveClassFromPercentage(r);
+      return normalizeClassText(derived);
+    };
 
     const atkt = results.filter((r) => {
       const c = classText(r);
