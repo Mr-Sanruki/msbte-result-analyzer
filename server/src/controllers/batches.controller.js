@@ -336,14 +336,33 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const dvIdx = html.toLowerCase().indexOf("id=\"dvtotal0\"");
     const dvIdx2 = dvIdx >= 0 ? dvIdx : html.toLowerCase().indexOf("id='dvtotal0'");
     if (dvIdx2 >= 0) {
-      const slice = html.slice(dvIdx2, Math.min(html.length, dvIdx2 + 12000));
+      const divEnd = html.toLowerCase().indexOf("</div>", dvIdx2);
+      const slice = html.slice(
+        dvIdx2,
+        divEnd > dvIdx2 ? divEnd + "</div>".length : Math.min(html.length, dvIdx2 + 12000)
+      );
 
-      const preferred = slice.match(/colspan\s*=\s*"?4"?[^>]*>\s*<strong[^>]*>([^<]+)<\/strong>/i);
-      if (preferred && preferred[1]) return preferred[1].trim();
+      const keywordRe = /(distinction|\bclass\b|\bpass\b|\bfail\b|\bkt\b|atkt)/i;
 
+      // Prefer the dvTotal0 class line cell (colspan=4). There may be multiple colspan=4 cells,
+      // so pick the one that looks like a class/result.
+      const candidates = Array.from(
+        slice.matchAll(/colspan\s*=\s*"?4"?[^>]*>\s*<strong[^>]*>([^<]+)<\/strong>/gi)
+      )
+        .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
+        .filter(Boolean);
+
+      const best = candidates.find((t) => keywordRe.test(t));
+      if (best) return best;
+
+      // Fallback: take the last <strong> in dvTotal0 div that looks like a class/result
       const strongMatches = Array.from(slice.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
         .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
         .filter(Boolean);
+
+      const lastKeyword = [...strongMatches].reverse().find((t) => keywordRe.test(t));
+      if (lastKeyword) return lastKeyword;
+
       if (strongMatches.length) return strongMatches[strongMatches.length - 1] || null;
     }
 
