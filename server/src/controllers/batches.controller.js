@@ -6,6 +6,7 @@ import { extractEnrollmentNumbersFromXlsx } from "../services/excel.service.js";
 import { parseMsbteResultHtml } from "../services/msbteParse.service.js";
 import { msbteJobService } from "../services/msbtePuppeteer.service.js";
 import ExcelJS from "exceljs";
+import * as cheerio from "cheerio";
 import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
@@ -333,6 +334,25 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const html = String(rawHtml || "");
     if (!html) return null;
 
+    try {
+      const $ = cheerio.load(html);
+      const dv = $("#dvTotal0");
+      if (dv.length) {
+        const keywordRe = /(distinction|\bclass\b|\bpass\b|\bfail\b|\bkt\b|atkt)/i;
+        const candidates = dv
+          .find("td[colspan='4'] strong, td[colspan=4] strong")
+          .toArray()
+          .map((el) => String($(el).text() || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim())
+          .filter(Boolean);
+
+        // Only accept values that look like a class/result.
+        const best = candidates.find((t) => keywordRe.test(t));
+        return best || null;
+      }
+    } catch {
+      // ignore and fall back to regex
+    }
+
     const dvIdx = html.toLowerCase().indexOf("id=\"dvtotal0\"");
     const dvIdx2 = dvIdx >= 0 ? dvIdx : html.toLowerCase().indexOf("id='dvtotal0'");
     if (dvIdx2 >= 0) {
@@ -363,13 +383,10 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       const lastKeyword = [...strongMatches].reverse().find((t) => keywordRe.test(t));
       if (lastKeyword) return lastKeyword;
 
-      if (strongMatches.length) return strongMatches[strongMatches.length - 1] || null;
+      return null;
     }
 
-    const strongMatches = Array.from(html.matchAll(/<strong[^>]*>([^<]+)<\/strong>/gi))
-      .map((m) => (m && m[1] ? String(m[1]).trim() : ""))
-      .filter(Boolean);
-    return strongMatches.length ? strongMatches[strongMatches.length - 1] : null;
+    return null;
   }
 
   function buildAnalysisWorksheet(wb) {
@@ -586,33 +603,7 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const wb = new ExcelJS.Workbook();
     buildAnalysisWorksheet(wb);
 
-    // Debug/verification sheet: show actual MSBTE class text extracted from rawHtml
-    const classSheet = wb.addWorksheet("msbte class");
-    classSheet.addRow(["ROLL NO", "SEAT NO", "ENROLLMENT NO", "NAME", "PERCENTAGE", "MSBTE CLASS (HTML)"]);
-    classSheet.getRow(1).font = { bold: true };
-    classSheet.columns = [
-      { width: 10 },
-      { width: 16 },
-      { width: 18 },
-      { width: 28 },
-      { width: 12 },
-      { width: 30 },
-    ];
-
     const results = batch.results || [];
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      const extracted = r?.rawHtml ? extractResultClassFromRawHtml(r.rawHtml) : null;
-      classSheet.addRow([
-        i + 1,
-        r.enrollmentNumber || "",
-        r.marksheetEnrollmentNumber || "",
-        r.name || "",
-        typeof r.percentage === "number" ? r.percentage : r.percentage || "",
-        extracted || "",
-      ]);
-    }
-
     const sheet = wb.addWorksheet("subject wise");
 
     // Note: keep using the same results array for subject-wise export
