@@ -389,6 +389,58 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return null;
   }
 
+  const getEffectiveResultClass = (r) => {
+    const rawResultClass = String(r?.resultClass || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    // Only trust resultClass if it's actually a class label (not generic PASS/FAIL)
+    // Examples we want to keep: "FIRST CLASS", "FIRST CLASS WITH DISTINCTION", "SECOND CLASS", "KT".
+    if (rawResultClass) {
+      const lc = rawResultClass.toLowerCase();
+      const looksLikeClassLabel = /(distinction|\bclass\b|\bkt\b|atkt)/i.test(lc);
+      if (looksLikeClassLabel) return rawResultClass;
+    }
+
+    // First try our HTML parser (keeps behavior consistent)
+    if (r?.rawHtml) {
+      try {
+        const parsed = parseMsbteResultHtml(r.rawHtml);
+        if (parsed?.resultClass) {
+          const parsedClass = String(parsed.resultClass || "")
+            .replace(/\u00a0/g, " ")
+            .replace(/\s+/g, " ")
+            .trim();
+          if (parsedClass) return parsedClass;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Guaranteed fallback: extract from the exact dvTotal0 markup
+    if (r?.rawHtml) {
+      const extracted = extractResultClassFromRawHtml(r.rawHtml);
+      if (extracted) return extracted;
+    }
+
+    // Fallback: derive class from percentage (if available)
+    const pRaw = r?.percentage;
+    const p =
+      typeof pRaw === "number" ? pRaw : typeof pRaw === "string" ? Number.parseFloat(pRaw) : Number.NaN;
+    if (Number.isFinite(p)) {
+      if (p >= 75) return "FIRST CLASS WITH DISTINCTION";
+      if (p >= 60) return "FIRST CLASS";
+      if (p >= 50) return "SECOND CLASS";
+      if (p >= 40) return "PASS CLASS";
+    }
+
+    // Final fallback: show whatever was stored (PASS/FAIL), or null
+    if (rawResultClass) return rawResultClass;
+    return null;
+  };
+
   function buildAnalysisWorksheet(wb) {
     const sheet = wb.addWorksheet("analysis");
     const results = batch.results || [];
@@ -396,27 +448,6 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
     const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
     const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
-    const getEffectiveResultClass = (r) => {
-      if (r?.resultClass) return r.resultClass;
-
-      // First try our HTML parser (keeps behavior consistent)
-      if (r?.rawHtml) {
-        try {
-          const parsed = parseMsbteResultHtml(r.rawHtml);
-          if (parsed?.resultClass) return parsed.resultClass;
-        } catch {
-          // ignore
-        }
-      }
-
-      // Guaranteed fallback: extract from the exact dvTotal0 markup
-      if (r?.rawHtml) {
-        const extracted = extractResultClassFromRawHtml(r.rawHtml);
-        if (extracted) return extracted;
-      }
-
-      return null;
-    };
 
     const normalizeClassText = (s) =>
       String(s || "")
@@ -808,7 +839,9 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       row.getCell(totalCol).value = typeof r.totalMarks === "number" ? r.totalMarks : "";
       row.getCell(percentageCol).value =
         typeof r.percentage === "number" ? r.percentage : r.resultClass === "KT" ? "KT" : "";
-      row.getCell(resultCol).value = r.resultClass || r.resultStatus || (r.errorMessage ? "Error" : "");
+      // Use the same class extraction logic as analysis sheet to show actual MSBTE class
+      const effectiveClass = getEffectiveResultClass(r);
+      row.getCell(resultCol).value = effectiveClass || r.resultClass || r.resultStatus || (r.errorMessage ? "Error" : "");
       row.commit();
     }
 
