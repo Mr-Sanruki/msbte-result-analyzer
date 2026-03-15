@@ -30,19 +30,11 @@ export const uploadBatch = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: { message: "Only .xlsx files are allowed" } });
   }
 
-  const primaryIdentifierType = String(req.body?.primaryIdentifierType || "seat").toLowerCase();
-  if (primaryIdentifierType !== "seat" && primaryIdentifierType !== "enrollment") {
-    return res.status(400).json({ error: { message: "primaryIdentifierType must be 'seat' or 'enrollment'" } });
-  }
-
-  const { enrollments, enrollmentColumn, sheetName } = await extractEnrollmentNumbersFromXlsx(req.file.buffer, {
-    primaryIdentifierType,
-  });
+  const { enrollments, enrollmentColumn, sheetName } = await extractEnrollmentNumbersFromXlsx(req.file.buffer);
 
   const batch = await ResultBatch.create({
     teacherId: req.user.sub,
     uploadDate: new Date(),
-    primaryIdentifierType,
     totalStudents: enrollments.length,
     passCount: 0,
     failCount: 0,
@@ -56,7 +48,6 @@ export const uploadBatch = asyncHandler(async (req, res) => {
       uploadDate: batch.uploadDate,
       totalStudents: batch.totalStudents,
       status: batch.status,
-      primaryIdentifierType: batch.primaryIdentifierType,
       sheetName,
       enrollmentColumn,
     },
@@ -339,8 +330,6 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return res.status(404).json({ error: { message: "Batch not found" } });
   }
 
-  const primaryIdentifierType = String(batch.primaryIdentifierType || "seat").toLowerCase();
-
   function extractResultClassFromRawHtml(rawHtml) {
     const html = String(rawHtml || "");
     if (!html) return null;
@@ -452,14 +441,13 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return null;
   };
 
-  function buildAnalysisWorksheet(wb, results) {
+  function buildAnalysisWorksheet(wb) {
     const sheet = wb.addWorksheet("analysis");
-    const effectiveResults = results || [];
+    const results = batch.results || [];
 
-    const appeared =
-      effectiveResults.filter((r) => r.fetchedAt && !r.errorMessage).length || effectiveResults.length;
-    const pass = effectiveResults.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
-    const fail = effectiveResults.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
+    const appeared = results.filter((r) => r.fetchedAt && !r.errorMessage).length || results.length;
+    const pass = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "pass").length;
+    const fail = results.filter((r) => String(r.resultStatus || "").toLowerCase() === "fail").length;
 
     const normalizeClassText = (s) =>
       String(s || "")
@@ -491,27 +479,27 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       return normalizeClassText(derived);
     };
 
-    const atkt = effectiveResults.filter((r) => {
+    const atkt = results.filter((r) => {
       const c = classText(r);
       return c === "kt" || c.includes(" atkt") || c.includes("atkt") || c.includes(" kt");
     }).length;
 
-    const firstDist = effectiveResults.filter((r) => {
+    const firstDist = results.filter((r) => {
       const c = classText(r);
       return c.includes("first class with distinction") || (c.includes("distinction") && c.includes("first"));
     }).length;
 
-    const first = effectiveResults.filter((r) => {
+    const first = results.filter((r) => {
       const c = classText(r);
       return (c.includes("first class") || c.includes("first")) && !c.includes("distinction");
     }).length;
 
-    const second = effectiveResults.filter((r) => {
+    const second = results.filter((r) => {
       const c = classText(r);
       return c.includes("second class") || c.includes("second");
     }).length;
 
-    const passClass = effectiveResults.filter((r) => {
+    const passClass = results.filter((r) => {
       const c = classText(r);
       return (c.includes("pass class") || c === "pass") && !c.includes("fail");
     }).length;
@@ -642,12 +630,11 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     sheet.views = [{ state: "frozen", ySplit: 4 }];
   }
 
-  function buildSubjectWiseFormattedWorkbook(resultsForWorkbook, opts = {}) {
+  function buildSubjectWiseFormattedWorkbook() {
     const wb = new ExcelJS.Workbook();
-    buildAnalysisWorksheet(wb, resultsForWorkbook);
+    buildAnalysisWorksheet(wb);
 
-    const results = resultsForWorkbook || [];
-    const titleSuffix = opts?.titleSuffix ? String(opts.titleSuffix) : "";
+    const results = batch.results || [];
     const sheet = wb.addWorksheet("subject wise");
 
     // Note: keep using the same results array for subject-wise export
@@ -714,15 +701,15 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     const lastCol = resultCol;
 
     // Title row (Row 1)
-    sheet.getRow(1).getCell(1).value = titleSuffix ? `Subject Wise Marks - ${titleSuffix}` : "Subject Wise Marks";
+    sheet.getRow(1).getCell(1).value = "Subject Wise Marks";
     sheet.mergeCells(1, 1, 1, lastCol);
     sheet.getRow(1).font = { bold: true };
     sheet.getRow(1).alignment = { horizontal: "center" };
 
     // Row 2: Base headers + MARKS merged
     sheet.getRow(2).getCell(1).value = "ROLL NO";
-    sheet.getRow(2).getCell(2).value = primaryIdentifierType === "enrollment" ? "ENROLLMENT NO" : "SEAT NO";
-    sheet.getRow(2).getCell(3).value = primaryIdentifierType === "enrollment" ? "SEAT NO" : "ENROLLMENT NO";
+    sheet.getRow(2).getCell(2).value = "SEAT NO";
+    sheet.getRow(2).getCell(3).value = "ENROLLMENT NO";
     sheet.getRow(2).getCell(4).value = "NAME";
     if (marksWidth > 0) {
       sheet.getRow(2).getCell(startSubjectCol).value = "MARKS";
@@ -830,8 +817,7 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       const row = sheet.getRow(startRow + i);
       row.getCell(1).value = i + 1;
       row.getCell(2).value = r.enrollmentNumber || "";
-      row.getCell(3).value =
-        primaryIdentifierType === "enrollment" ? r.seatNumber || "" : r.marksheetEnrollmentNumber || "";
+      row.getCell(3).value = r.marksheetEnrollmentNumber || "";
       row.getCell(4).value = r.name || "";
 
       cursor = startSubjectCol;
@@ -862,146 +848,23 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     return wb;
   }
 
-  const formattedWb = buildSubjectWiseFormattedWorkbook(batch.results || []);
+  const formattedWb = buildSubjectWiseFormattedWorkbook();
   const buffer = await formattedWb.xlsx.writeBuffer();
 
   const filename = `msbte_batch_${String(batch._id)}.xlsx`;
 
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  return res.send(Buffer.from(buffer));
-});
-
-export const exportBatchReportXlsx = asyncHandler(async (req, res) => {
-  const batch = await ResultBatch.findOne({ _id: req.params.id, teacherId: req.user.sub }).lean();
-  if (!batch) {
-    return res.status(404).json({ error: { message: "Batch not found" } });
-  }
-
-  const report = String(req.params.report || "").toLowerCase();
-
-  // Reuse the existing consolidated export (analysis + subject wise) to avoid any divergence.
-  if (report === "full") {
-    return res.redirect(302, `/batches/${String(req.params.id)}/export.xlsx`);
-  }
-
-  const all = batch.results || [];
-
-  const normalize = (s) =>
-    String(s || "")
-      .replace(/\u00a0/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .toLowerCase();
-
-  const isPass = (r) => !r?.errorMessage && normalize(r?.resultStatus) === "pass";
-  const isFail = (r) => !r?.errorMessage && normalize(r?.resultStatus) === "fail";
-  const isKt = (r) => {
-    const cls = normalize(r?.resultClass) || normalize(r?.resultStatus);
-    return cls === "kt" || cls.includes(" atkt") || cls.includes("atkt") || cls.includes(" kt");
-  };
-
-  function buildStudentsOnlyWorkbook(results, sheetName) {
-    const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet(sheetName);
-
-    const primaryLabel = String(batch.primaryIdentifierType || "seat").toLowerCase() === "enrollment" ? "ENROLLMENT NO" : "SEAT NO";
-    const secondaryLabel = primaryLabel === "SEAT NO" ? "ENROLLMENT NO" : "SEAT NO";
-
-    ws.addRow(["ROLL NO", primaryLabel, secondaryLabel, "NAME", "PERCENTAGE", "STATUS", "CLASS", "ERROR"]);
-    for (let i = 0; i < results.length; i++) {
-      const r = results[i];
-      ws.addRow([
-        i + 1,
-        r.enrollmentNumber || "",
-        String(batch.primaryIdentifierType || "seat").toLowerCase() === "enrollment"
-          ? r.seatNumber || ""
-          : r.marksheetEnrollmentNumber || "",
-        r.name || "",
-        typeof r.percentage === "number" ? r.percentage : "",
-        r.resultStatus || "",
-        r.resultClass || "",
-        r.errorMessage || "",
-      ]);
-    }
-
-    ws.getRow(1).font = { bold: true };
-    ws.columns = [
-      { width: 10 },
-      { width: 18 },
-      { width: 18 },
-      { width: 26 },
-      { width: 12 },
-      { width: 10 },
-      { width: 24 },
-      { width: 34 },
-    ];
-
-    return wb;
-  }
-
-  const topN = (arr, n) =>
-    [...arr]
-      .filter((r) => !r?.errorMessage && typeof r?.percentage === "number")
-      .sort((a, b) => (b.percentage || 0) - (a.percentage || 0))
-      .slice(0, n);
-
-  let filename = `msbte_batch_${String(batch._id)}_${report}.xlsx`;
-  let wb = null;
-
-  if (report === "pass") {
-    wb = buildStudentsOnlyWorkbook(all.filter(isPass), "Pass Students");
-  } else if (report === "fail") {
-    wb = buildStudentsOnlyWorkbook(all.filter(isFail), "Fail Students");
-  } else if (report === "kt") {
-    wb = buildStudentsOnlyWorkbook(all.filter(isKt), "KT Analysis");
-  } else if (report === "toppers") {
-    wb = buildStudentsOnlyWorkbook(topN(all, 10), "Top Achievers");
-  } else if (report === "all") {
-    wb = new ExcelJS.Workbook();
-    const pass = all.filter(isPass);
-    const fail = all.filter(isFail);
-    const kt = all.filter(isKt);
-    const toppers = topN(all, 10);
-
-    const sheets = [
-      { name: "Pass Students", rows: pass },
-      { name: "Fail Students", rows: fail },
-      { name: "KT Analysis", rows: kt },
-      { name: "Top Achievers", rows: toppers },
-    ];
-
-    for (const s of sheets) {
-      const w = buildStudentsOnlyWorkbook(s.rows, s.name);
-      const ws = w.getWorksheet(s.name);
-      if (ws) {
-        const target = wb.addWorksheet(s.name);
-        ws.eachRow((row, rowNumber) => {
-          const values = row.values;
-          target.getRow(rowNumber).values = values;
-        });
-        target.columns = ws.columns;
-      }
-    }
-
-    filename = `msbte_batch_${String(batch._id)}_all_reports.xlsx`;
-  } else {
-    return res.status(400).json({ error: { message: "Unknown report type" } });
-  }
-
-  const buffer = await wb.xlsx.writeBuffer();
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   return res.send(Buffer.from(buffer));
 });
 
 export const recentBatches = asyncHandler(async (req, res) => {
-  const limitRaw = req.query?.limit;
-  const limit = Math.min(50, Math.max(1, Number.parseInt(String(limitRaw || "20"), 10) || 20));
-
   const batches = await ResultBatch.find({ teacherId: req.user.sub })
     .sort({ uploadDate: -1 })
-    .limit(limit)
+    .limit(5)
     .lean();
 
   return res.json({
@@ -1042,7 +905,6 @@ export const getBatch = asyncHandler(async (req, res) => {
       topperName: batch.topperName || null,
       topperPercentage: batch.topperPercentage || null,
       status: batch.status,
-      primaryIdentifierType: batch.primaryIdentifierType || "seat",
       results: batch.results,
       errors: batch.errors,
     },

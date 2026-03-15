@@ -6,7 +6,6 @@ import {
   batchAnalytics,
   deleteBatch,
   exportBatchXlsx,
-  exportBatchReportXlsx,
   getBatch,
   getStudentInBatch,
   recentBatches,
@@ -27,7 +26,6 @@ router.get("/batches/:id/students/:enrollment", requireAuth, getStudentInBatch);
 router.post("/batches/:id/reparse", requireAuth, reparseBatch);
 router.post("/batches/:id/reset", requireAuth, resetFailedOrUnknown);
 router.get("/batches/:id/export.xlsx", requireAuth, exportBatchXlsx);
-router.get("/batches/:id/reports/:report.xlsx", requireAuth, exportBatchReportXlsx);
 router.delete("/batches/:id", requireAuth, deleteBatch);
 
 export default router;

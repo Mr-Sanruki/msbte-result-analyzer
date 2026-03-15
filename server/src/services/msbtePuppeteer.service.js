@@ -17,24 +17,6 @@ async function getChromium() {
   }
 }
 
-async function waitForCaptchaErrorSignalOrThrow(page, timeoutMs) {
-  const hit = await waitForCaptchaErrorSignal(page, timeoutMs);
-  if (hit) return true;
-  const err = new Error("CAPTCHA_ERROR_NOT_FOUND");
-  err.code = "CAPTCHA_ERROR_NOT_FOUND";
-  throw err;
-}
-
-function isLikelyCaptchaOrSessionTimeoutMessage(message) {
-  const m = String(message || "").toLowerCase();
-  if (!m) return false;
-  return (
-    m.includes("timed out waiting for msbte response") ||
-    m.includes("timeout") ||
-    m.includes("navigation timeout")
-  );
-}
-
 function firstExistingPath(paths) {
   for (const p of paths) {
     if (!p) continue;
@@ -84,9 +66,7 @@ function defaultSelectors() {
     enrollmentInput: "input#txtEnrollOrSeatNo",
     captchaInput: "input#txtCaptcha, input[id*='captcha' i], input[name*='captcha' i]",
     submitButton: "input#btnShowResult, input[name='btnShowResult']",
-    // Keep this fairly specific; broad selectors like 'table' can cause false positives
-    // on the form page and break the fetch flow.
-    resultContainer: "#dvTotal0, #pnlResult",
+    resultContainer: "#pnlResult, #UpdatePanel1, table",
   };
 }
 
@@ -96,70 +76,6 @@ function loadSelectors() {
     return { ...defaultSelectors(), ...JSON.parse(env.MSBTE_SELECTORS_JSON) };
   } catch {
     return defaultSelectors();
-  }
-}
-
-function parsePositiveInt(value, fallback) {
-  const n = Number.parseInt(String(value || ""), 10);
-  return Number.isFinite(n) && n > 0 ? n : fallback;
-}
-
-function getMsbteTimeouts() {
-  return {
-    captchaTimeoutMs: parsePositiveInt(process.env.MSBTE_CAPTCHA_TIMEOUT_MS, 12000),
-    resultTimeoutMs: parsePositiveInt(process.env.MSBTE_RESULT_TIMEOUT_MS, 45000),
-  };
-}
-
-function isCaptchaRelatedErrorMessage(message) {
-  const m = String(message || "").toLowerCase();
-  if (!m) return false;
-  return (
-    m.includes("captcha") ||
-    m.includes("please enter valid captcha") ||
-    m.includes("invalid captcha") ||
-    m.includes("incorrect captcha")
-  );
-}
-
-async function waitForCaptchaErrorSignal(page, timeoutMs) {
-  const errorSelectors = [
-    "#lblError",
-    "#lblMessage",
-    "span[id*='lbl'][id*='Err']",
-    "span[id*='lbl'][id*='Error']",
-    ".text-danger",
-    ".error",
-  ];
-
-  try {
-    await page.waitForFunction(
-      (sels) => {
-        const text = (document.body && document.body.innerText ? document.body.innerText : "").toLowerCase();
-        if (
-          text.includes("invalid captcha") ||
-          text.includes("incorrect captcha") ||
-          text.includes("please enter valid captcha")
-        ) {
-          return true;
-        }
-
-        for (const sel of sels) {
-          const el = document.querySelector(sel);
-          const t = (el && el.textContent ? el.textContent : "").toLowerCase();
-          if (!t) continue;
-          if (t.includes("captcha") && (t.includes("invalid") || t.includes("incorrect") || t.includes("valid"))) {
-            return true;
-          }
-        }
-        return false;
-      },
-      { timeout: timeoutMs },
-      errorSelectors
-    );
-    return true;
-  } catch {
-    return false;
   }
 }
 
@@ -190,7 +106,6 @@ class MsBteFetchJob {
     this.total = 0;
     this.currentEnrollment = null;
     this.lastError = null;
-    this.lastCaptcha = null;
     this.selectors = loadSelectors();
   }
 
@@ -354,11 +269,6 @@ class MsBteFetchJob {
 
     this.page = await this.browser.newPage();
 
-    // Hosted environments (Render) can be slower/variable; make timeouts configurable.
-    const { resultTimeoutMs } = getMsbteTimeouts();
-    this.page.setDefaultTimeout(resultTimeoutMs);
-    this.page.setDefaultNavigationTimeout(resultTimeoutMs);
-
     if (!env.MSBTE_RESULT_URL) {
       const err = new Error("MSBTE_RESULT_URL is not set in server .env");
       err.statusCode = 500;
@@ -374,9 +284,6 @@ class MsBteFetchJob {
     );
 
     await this._prepareCurrent();
-    if (this.status !== "completed") {
-      this.status = "ready_for_captcha";
-    }
   }
 
   async _prepareCurrent() {
@@ -403,35 +310,11 @@ class MsBteFetchJob {
       return;
     }
 
-    const primaryIdentifierType = String(batch.primaryIdentifierType || "seat").toLowerCase();
     const modeValue = String(process.env.MSBTE_MODE_VALUE || "1");
     if (this.selectors.modeSelect) {
       try {
         await this.page.waitForSelector(this.selectors.modeSelect, { timeout: 15000 });
-        const selected = await this.page
-          .evaluate(
-            (sel, primary) => {
-              const el = document.querySelector(sel);
-              if (!el) return null;
-              const opts = Array.from(el.querySelectorAll("option"));
-              const want = primary === "enrollment" ? "enroll" : "seat";
-              const best = opts.find((o) => String(o.textContent || "").toLowerCase().includes(want));
-              if (best && best.value) {
-                el.value = best.value;
-                el.dispatchEvent(new Event("change", { bubbles: true }));
-                return best.value;
-              }
-              return null;
-            },
-            this.selectors.modeSelect,
-            primaryIdentifierType
-          )
-          .catch(() => null);
-
-        // Backward-compatible fallback to configured mode value.
-        if (!selected) {
-          await this.page.select(this.selectors.modeSelect, modeValue);
-        }
+        await this.page.select(this.selectors.modeSelect, modeValue);
         await this.page.waitForFunction(
           (sel, expected) => {
             const el = document.querySelector(sel);
@@ -439,7 +322,7 @@ class MsBteFetchJob {
           },
           { timeout: 15000 },
           this.selectors.modeSelect,
-          selected || modeValue
+          modeValue
         );
       } catch {
         // ignore and continue; page might not have the dropdown in some sessions
@@ -466,8 +349,7 @@ class MsBteFetchJob {
       await this.page.waitForTimeout(150);
     }
 
-    // Do not set this.status here. The caller decides whether we are actively submitting
-    // (auto-continue) or waiting for user CAPTCHA input.
+    this.status = "ready_for_captcha";
   }
 
   async continueAfterCaptcha({ captcha } = {}) {
@@ -485,196 +367,98 @@ class MsBteFetchJob {
 
     this.status = "submitting";
 
-    // Keep processing enrollments in the same session until we need a new CAPTCHA.
-    // Safety cap to avoid infinite loops.
-    const maxAutoSteps = 250;
-    let steps = 0;
-
-    while (steps < maxAutoSteps) {
-      steps++;
-
-      try {
-        const providedCaptcha = String(captcha || "").trim();
-        const effectiveCaptcha = providedCaptcha || this.lastCaptcha;
-
-        if (providedCaptcha) {
-          this.lastCaptcha = providedCaptcha;
-        }
-
-        if (effectiveCaptcha) {
-          await this.setCaptchaValue(effectiveCaptcha);
-        }
-
-        // In auto-continue mode we should not submit unless CAPTCHA is actually filled.
-        // If captcha selector is configured and the input value is empty, throw a typed error.
-        if (this.selectors.captchaInput) {
-          try {
-            const captchaValue = await this.page
-              .$eval(this.selectors.captchaInput, (el) => (el?.value ? String(el.value) : ""))
-              .catch(() => "");
-
-            if (!String(captchaValue || "").trim()) {
-              const err = new Error("CAPTCHA is empty");
-              err.statusCode = 409;
-              err.code = "CAPTCHA_EMPTY";
-              throw err;
-            }
-          } catch (e) {
-            if (e?.code === "CAPTCHA_EMPTY") throw e;
-            // if selector doesn't exist, don't block
-          }
-        }
-
-        const submit = await this.page.$(this.selectors.submitButton);
-        if (!submit) {
-          throw new Error("Submit button not found. Configure MSBTE_SELECTORS_JSON.");
-        }
-
-        // Submit and quickly detect either a result page OR an on-page CAPTCHA error.
-        // Many MSBTE failures do not navigate, so waiting only on navigation can stall.
-        await submit.click();
-
-        const { captchaTimeoutMs, resultTimeoutMs } = getMsbteTimeouts();
-
-        let outcome = null;
-        try {
-          outcome = await Promise.race([
-            this.page
-              .waitForSelector(this.selectors.resultContainer, { timeout: resultTimeoutMs })
-              .then(() => "result"),
-            waitForCaptchaErrorSignalOrThrow(this.page, captchaTimeoutMs).then(() => "captcha_error"),
-          ]);
-        } catch {
-          outcome = null;
-        }
-
-        if (outcome === "captcha_error") {
-          this.lastError = "Incorrect CAPTCHA";
-          this.status = "ready_for_captcha";
-          this.lastCaptcha = null;
-          await this.refreshCaptcha().catch(() => null);
-          await this._prepareCurrent();
-          return;
-        }
-
-        if (outcome !== "result") {
-          // Treat slow/no-response as session/captcha issue: pause and let user retry.
-          this.lastError = "Timed out waiting for MSBTE response. Please retry CAPTCHA.";
-          this.status = "ready_for_captcha";
-          this.lastCaptcha = null;
-          await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
-          await this._prepareCurrent();
-          return;
-        }
-
-        const html = await this.page.content();
-        const parsed = parseMsbteResultHtml(html);
-
-        // If MSBTE says CAPTCHA is invalid/expired, pause and ask user for CAPTCHA again.
-        if (!parsed.ok && isCaptchaRelatedErrorMessage(parsed.errorMessage)) {
-          this.lastError = "Incorrect CAPTCHA";
-          this.status = "ready_for_captcha";
-          this.lastCaptcha = null;
-
-          // Go back to form page and re-fill current enrollment so the user can submit again.
-          await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" });
-          await this._prepareCurrent();
-          return;
-        }
-
-        await ResultBatch.updateOne(
-          { _id: this.batchId, teacherId: this.teacherId, "results.enrollmentNumber": this.currentEnrollment },
-          {
-            $set: {
-              "results.$.rawHtml": html,
-              "results.$.fetchedAt": new Date(),
-              "results.$.errorMessage": parsed.ok ? null : parsed.errorMessage || "Parse failed",
-              ...(parsed.name ? { "results.$.name": parsed.name } : {}),
-              ...(parsed.enrollmentNumber
-                ? { "results.$.marksheetEnrollmentNumber": parsed.enrollmentNumber }
-                : {}),
-              ...(parsed.seatNumber ? { "results.$.seatNumber": parsed.seatNumber } : {}),
-              ...(typeof parsed.totalMarks === "number" ? { "results.$.totalMarks": parsed.totalMarks } : {}),
-              ...(typeof parsed.percentage === "number" ? { "results.$.percentage": parsed.percentage } : {}),
-              ...(parsed.resultStatus ? { "results.$.resultStatus": parsed.resultStatus } : {}),
-              ...(parsed.resultClass ? { "results.$.resultClass": parsed.resultClass } : {}),
-              ...(parsed.subjectMarks ? { "results.$.subjectMarks": parsed.subjectMarks } : {}),
-            },
-          }
-        );
-
-        this.currentIndex++;
-
-        // Go back to form page for next enrollment
-        await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" });
-
-        await this._prepareCurrent();
-
-        // If we are done, _prepareCurrent will close the browser and set status.
-        if (this.status === "completed") return;
-
-        // If we have a remembered CAPTCHA, continue the loop and submit next enrollment.
-        // Otherwise pause for user input.
-        if (!this.lastCaptcha) {
-          this.status = "ready_for_captcha";
-          return;
-        }
-
-        this.status = "submitting";
-
-        // Continue to next iteration with stored captcha.
-        captcha = null;
-      } catch (e) {
-        if (e?.code === "CAPTCHA_EMPTY") {
-          // User hasn't typed CAPTCHA yet. Do not mark this enrollment as failed.
-          this.lastError = null;
-          this.status = "ready_for_captcha";
-          return;
-        }
-
-        // Treat timeouts as a pause (do not mark student as failed / do not advance index).
-        if (isLikelyCaptchaOrSessionTimeoutMessage(e?.message)) {
-          this.lastError = "Timed out waiting for MSBTE response. Please retry CAPTCHA.";
-          this.status = "ready_for_captcha";
-          this.lastCaptcha = null;
-          await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
-          await this._prepareCurrent();
-          return;
-        }
-
-        this.lastError = e?.message || "Fetch failed";
-
-        await ResultBatch.updateOne(
-          { _id: this.batchId, teacherId: this.teacherId, "results.enrollmentNumber": this.currentEnrollment },
-          {
-            $set: {
-              "results.$.errorMessage": this.lastError,
-              "results.$.fetchedAt": new Date(),
-            },
-            $push: { errors: `${this.currentEnrollment}: ${this.lastError}` },
-          }
-        );
-
-        this.currentIndex++;
-        await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" });
-        await this._prepareCurrent();
-
-        // If we are done, stop.
-        if (this.status === "completed") return;
-
-        // If the next enrollment is ready and we still have CAPTCHA remembered, keep going.
-        if (!this.lastCaptcha) {
-          this.status = "ready_for_captcha";
-          return;
-        }
-
-        this.status = "submitting";
-        captcha = null;
+    try {
+      if (captcha) {
+        await this.setCaptchaValue(captcha);
       }
-    }
 
-    // If we hit the cap, pause safely and let user continue.
-    this.status = "ready_for_captcha";
+      // In auto-continue mode we should not submit unless CAPTCHA is actually filled.
+      // If captcha selector is configured and the input value is empty, throw a typed error.
+      if (this.selectors.captchaInput) {
+        try {
+          const captchaValue = await this.page
+            .$eval(this.selectors.captchaInput, (el) => (el?.value ? String(el.value) : ""))
+            .catch(() => "");
+
+          if (!String(captchaValue || "").trim()) {
+            const err = new Error("CAPTCHA is empty");
+            err.statusCode = 409;
+            err.code = "CAPTCHA_EMPTY";
+            throw err;
+          }
+        } catch (e) {
+          if (e?.code === "CAPTCHA_EMPTY") throw e;
+          // if selector doesn't exist, don't block
+        }
+      }
+
+      const submit = await this.page.$(this.selectors.submitButton);
+      if (!submit) {
+        throw new Error("Submit button not found. Configure MSBTE_SELECTORS_JSON.");
+      }
+
+      await Promise.all([
+        this.page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 30000 }).catch(() => null),
+        submit.click(),
+      ]);
+
+      await this.page.waitForSelector(this.selectors.resultContainer, { timeout: 30000 });
+
+      const html = await this.page.content();
+      const parsed = parseMsbteResultHtml(html);
+
+      await ResultBatch.updateOne(
+        { _id: this.batchId, teacherId: this.teacherId, "results.enrollmentNumber": this.currentEnrollment },
+        {
+          $set: {
+            "results.$.rawHtml": html,
+            "results.$.fetchedAt": new Date(),
+            "results.$.errorMessage": parsed.ok ? null : parsed.errorMessage || "Parse failed",
+            ...(parsed.name ? { "results.$.name": parsed.name } : {}),
+            ...(parsed.enrollmentNumber
+              ? { "results.$.marksheetEnrollmentNumber": parsed.enrollmentNumber }
+              : {}),
+            ...(parsed.seatNumber ? { "results.$.seatNumber": parsed.seatNumber } : {}),
+            ...(typeof parsed.totalMarks === "number" ? { "results.$.totalMarks": parsed.totalMarks } : {}),
+            ...(typeof parsed.percentage === "number" ? { "results.$.percentage": parsed.percentage } : {}),
+            ...(parsed.resultStatus ? { "results.$.resultStatus": parsed.resultStatus } : {}),
+            ...(parsed.resultClass ? { "results.$.resultClass": parsed.resultClass } : {}),
+            ...(parsed.subjectMarks ? { "results.$.subjectMarks": parsed.subjectMarks } : {}),
+          },
+        }
+      );
+
+      this.currentIndex++;
+
+      // Go back to form page for next enrollment
+      await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" });
+
+      await this._prepareCurrent();
+    } catch (e) {
+      if (e?.code === "CAPTCHA_EMPTY") {
+        // User hasn't typed CAPTCHA yet. Do not mark this enrollment as failed.
+        this.lastError = null;
+        this.status = "ready_for_captcha";
+        return;
+      }
+
+      this.lastError = e?.message || "Fetch failed";
+
+      await ResultBatch.updateOne(
+        { _id: this.batchId, teacherId: this.teacherId, "results.enrollmentNumber": this.currentEnrollment },
+        {
+          $set: {
+            "results.$.errorMessage": this.lastError,
+            "results.$.fetchedAt": new Date(),
+          },
+          $push: { errors: `${this.currentEnrollment}: ${this.lastError}` },
+        }
+      );
+
+      this.currentIndex++;
+      await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" });
+      await this._prepareCurrent();
+    }
   }
 
   getState() {

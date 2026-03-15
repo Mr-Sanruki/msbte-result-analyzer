@@ -22,11 +22,6 @@ const resultBatchSchema = new mongoose.Schema(
   {
     teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "Teacher", required: true, index: true },
     uploadDate: { type: Date, default: Date.now, index: true },
-    primaryIdentifierType: {
-      type: String,
-      enum: ["seat", "enrollment"],
-      default: "seat",
-    },
     totalStudents: { type: Number, default: 0 },
     passCount: { type: Number, default: 0 },
     failCount: { type: Number, default: 0 },

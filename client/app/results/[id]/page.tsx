@@ -96,7 +96,6 @@ type Batch = {
   uploadDate: string;
   totalStudents: number;
   status: "created" | "fetching" | "completed" | "failed";
-  primaryIdentifierType?: "seat" | "enrollment";
   results: StudentResult[];
   errors: string[];
 };
@@ -128,9 +127,6 @@ export default function ResultsPage() {
   const [captchaPngBase64, setCaptchaPngBase64] = React.useState<string | null>(null);
   const [captchaText, setCaptchaText] = React.useState<string>("");
   const [captchaError, setCaptchaError] = React.useState<string | null>(null);
-
-  const primaryLabel = batch?.primaryIdentifierType === "enrollment" ? "Enrollment No" : "Seat No";
-  const secondaryLabel = batch?.primaryIdentifierType === "enrollment" ? "Seat No" : "Enrollment No";
 
   const isJobActive =
     Boolean(state?.status) &&
@@ -355,17 +351,6 @@ export default function ResultsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state?.status, authLoading, teacher, batchId]);
-
-  const captchaInputRef = React.useRef<HTMLInputElement | null>(null);
-
-  React.useEffect(() => {
-    if (state?.status === "ready_for_captcha") {
-      const t = setTimeout(() => {
-        captchaInputRef.current?.focus?.();
-      }, 50);
-      return () => clearTimeout(t);
-    }
-  }, [state?.status]);
 
   async function start() {
     setError(null);
@@ -613,36 +598,15 @@ export default function ResultsPage() {
                                   <img
                                     alt="captcha"
                                     src={`data:image/png;base64,${captchaPngBase64}`}
-                                    className="h-28 w-auto max-w-full cursor-zoom-in select-none"
-                                    onClick={() => {
-                                      const w = window.open();
-                                      if (w) {
-                                        w.document.write(
-                                          `<img src="data:image/png;base64,${captchaPngBase64}" style="max-width:100%; height:auto;" />`
-                                        );
-                                      }
-                                    }}
+                                    className="h-24 w-auto max-w-full select-none"
                                   />
                                 </div>
                                 <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-center">
                                   <input
-                                    ref={captchaInputRef}
                                     value={captchaText}
                                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCaptchaText(e.target.value)}
                                     placeholder="Enter CAPTCHA"
                                     className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition focus:border-blue-600 focus:ring-2 focus:ring-blue-600/20"
-                                    onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        if (
-                                          busy === null &&
-                                          state?.status === "ready_for_captcha" &&
-                                          captchaText.trim()
-                                        ) {
-                                          cont();
-                                        }
-                                      }
-                                    }}
                                   />
                                   <div className="flex items-center justify-end">
                                     <Button
@@ -851,7 +815,7 @@ export default function ResultsPage() {
                           onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortKey(e.target.value as any)}
                           className="mt-1 w-full bg-white py-0.5 text-sm text-slate-900 outline-none"
                         >
-                          <option value="enrollment">{primaryLabel}</option>
+                          <option value="enrollment">Seat No</option>
                           <option value="percentage_desc">Percentage (high to low)</option>
                           <option value="percentage_asc">Percentage (low to high)</option>
                         </select>
@@ -863,8 +827,8 @@ export default function ResultsPage() {
                     <table className="w-full text-left text-sm">
                       <thead className="bg-slate-50 text-xs text-slate-600">
                         <tr>
-                          <th className="px-4 py-3">{primaryLabel}</th>
-                          <th className="px-4 py-3">{secondaryLabel}</th>
+                          <th className="px-4 py-3">Seat No</th>
+                          <th className="px-4 py-3">Enrollment No</th>
                           <th className="px-4 py-3">Name</th>
                           <th className="px-4 py-3">% / Class</th>
                           <th className="px-4 py-3">Status</th>
@@ -888,11 +852,7 @@ export default function ResultsPage() {
                             <React.Fragment key={r.enrollmentNumber}>
                               <tr className="border-t border-slate-200">
                                 <td className="px-4 py-3 font-medium text-slate-900">{r.enrollmentNumber}</td>
-                                <td className="px-4 py-3 text-slate-700">
-                                  {batch?.primaryIdentifierType === "enrollment"
-                                    ? r.seatNumber || "-"
-                                    : r.marksheetEnrollmentNumber || "-"}
-                                </td>
+                                <td className="px-4 py-3 text-slate-700">{r.marksheetEnrollmentNumber || "-"}</td>
                                 <td className="px-4 py-3 text-slate-700">{r.name || "-"}</td>
                                 <td className="px-4 py-3 text-slate-700">
                                   <div className="font-medium text-slate-900">{showPercent}</div>
