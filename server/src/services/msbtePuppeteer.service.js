@@ -17,6 +17,24 @@ async function getChromium() {
   }
 }
 
+async function waitForCaptchaErrorSignalOrThrow(page, timeoutMs) {
+  const hit = await waitForCaptchaErrorSignal(page, timeoutMs);
+  if (hit) return true;
+  const err = new Error("CAPTCHA_ERROR_NOT_FOUND");
+  err.code = "CAPTCHA_ERROR_NOT_FOUND";
+  throw err;
+}
+
+function isLikelyCaptchaOrSessionTimeoutMessage(message) {
+  const m = String(message || "").toLowerCase();
+  if (!m) return false;
+  return (
+    m.includes("timed out waiting for msbte response") ||
+    m.includes("timeout") ||
+    m.includes("navigation timeout")
+  );
+}
+
 function firstExistingPath(paths) {
   for (const p of paths) {
     if (!p) continue;
@@ -66,7 +84,9 @@ function defaultSelectors() {
     enrollmentInput: "input#txtEnrollOrSeatNo",
     captchaInput: "input#txtCaptcha, input[id*='captcha' i], input[name*='captcha' i]",
     submitButton: "input#btnShowResult, input[name='btnShowResult']",
-    resultContainer: "#pnlResult, #UpdatePanel1, table",
+    // Keep this fairly specific; broad selectors like 'table' can cause false positives
+    // on the form page and break the fetch flow.
+    resultContainer: "#dvTotal0, #pnlResult",
   };
 }
 
@@ -497,16 +517,22 @@ class MsBteFetchJob {
         // Many MSBTE failures do not navigate, so waiting only on navigation can stall.
         await submit.click();
 
-        const outcomeTimeoutMs = 12000;
-        const resultArrived = await Promise.race([
-          this.page
-            .waitForSelector(this.selectors.resultContainer, { timeout: outcomeTimeoutMs })
-            .then(() => true)
-            .catch(() => false),
-          waitForCaptchaErrorSignal(this.page, outcomeTimeoutMs).then((hit) => (hit ? "captcha_error" : false)),
-        ]);
+        const captchaTimeoutMs = 12000;
+        const resultTimeoutMs = 30000;
 
-        if (resultArrived === "captcha_error") {
+        let outcome = null;
+        try {
+          outcome = await Promise.race([
+            this.page
+              .waitForSelector(this.selectors.resultContainer, { timeout: resultTimeoutMs })
+              .then(() => "result"),
+            waitForCaptchaErrorSignalOrThrow(this.page, captchaTimeoutMs).then(() => "captcha_error"),
+          ]);
+        } catch {
+          outcome = null;
+        }
+
+        if (outcome === "captcha_error") {
           this.lastError = "Incorrect CAPTCHA";
           this.status = "ready_for_captcha";
           this.lastCaptcha = null;
@@ -515,8 +541,14 @@ class MsBteFetchJob {
           return;
         }
 
-        if (!resultArrived) {
-          throw new Error("Timed out waiting for MSBTE response. Please retry CAPTCHA.");
+        if (outcome !== "result") {
+          // Treat slow/no-response as session/captcha issue: pause and let user retry.
+          this.lastError = "Timed out waiting for MSBTE response. Please retry CAPTCHA.";
+          this.status = "ready_for_captcha";
+          this.lastCaptcha = null;
+          await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+          await this._prepareCurrent();
+          return;
         }
 
         const html = await this.page.content();
@@ -581,6 +613,16 @@ class MsBteFetchJob {
           // User hasn't typed CAPTCHA yet. Do not mark this enrollment as failed.
           this.lastError = null;
           this.status = "ready_for_captcha";
+          return;
+        }
+
+        // Treat timeouts as a pause (do not mark student as failed / do not advance index).
+        if (isLikelyCaptchaOrSessionTimeoutMessage(e?.message)) {
+          this.lastError = "Timed out waiting for MSBTE response. Please retry CAPTCHA.";
+          this.status = "ready_for_captcha";
+          this.lastCaptcha = null;
+          await this.page.goto(env.MSBTE_RESULT_URL, { waitUntil: "domcontentloaded" }).catch(() => null);
+          await this._prepareCurrent();
           return;
         }
 
