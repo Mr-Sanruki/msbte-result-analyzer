@@ -21,6 +21,7 @@ export default function UploadPage() {
   const [enrollments, setEnrollments] = React.useState<string[] | null>(null);
   const [batchId, setBatchId] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [primaryIdentifierType, setPrimaryIdentifierType] = React.useState<"seat" | "enrollment">("seat");
 
   function pickFile(f: File | null) {
     setError(null);
@@ -49,6 +50,7 @@ export default function UploadPage() {
 
     const form = new FormData();
     form.append("file", file);
+    form.append("primaryIdentifierType", primaryIdentifierType);
 
     try {
       const res = await api.post("/batches/upload", form, {
@@ -87,9 +89,26 @@ export default function UploadPage() {
                       <FileSpreadsheet className="h-4 w-4 text-blue-700" />
                       Upload
                     </div>
-                    <div className="text-sm text-slate-600">Upload .xlsx with Seat Numbers (preferred)</div>
+                    <div className="text-sm text-slate-600">
+                      Upload .xlsx with {primaryIdentifierType === "seat" ? "Seat Numbers" : "Enrollment Numbers"}
+                    </div>
                   </CardHeader>
                   <CardContent>
+                    <div className="mb-4 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+                      <div>
+                        <div className="text-xs text-slate-600">Primary identifier</div>
+                        <select
+                          value={primaryIdentifierType}
+                          onChange={(e: React.ChangeEvent<HTMLSelectElement>) =>
+                            setPrimaryIdentifierType(e.target.value as any)
+                          }
+                          className="mt-1 h-11 w-full rounded-2xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none"
+                        >
+                          <option value="seat">Seat No</option>
+                          <option value="enrollment">Enrollment No</option>
+                        </select>
+                      </div>
+                    </div>
                     <div
                       className={
                         "rounded-3xl border border-dashed bg-gradient-to-b from-white to-slate-50 p-10 text-center shadow-sm transition " +
@@ -171,7 +190,7 @@ export default function UploadPage() {
                           <div>
                             <div className="text-base font-semibold text-slate-900">Preview</div>
                             <div className="text-sm text-slate-600">
-                              Extracted seat numbers (showing up to 20)
+                              Extracted {primaryIdentifierType === "seat" ? "seat numbers" : "enrollment numbers"} (showing up to 20)
                             </div>
                           </div>
                           <div className="text-sm font-medium text-slate-900">{enrollments.length} students</div>

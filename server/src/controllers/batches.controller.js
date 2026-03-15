@@ -30,11 +30,19 @@ export const uploadBatch = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: { message: "Only .xlsx files are allowed" } });
   }
 
-  const { enrollments, enrollmentColumn, sheetName } = await extractEnrollmentNumbersFromXlsx(req.file.buffer);
+  const primaryIdentifierType = String(req.body?.primaryIdentifierType || "seat").toLowerCase();
+  if (primaryIdentifierType !== "seat" && primaryIdentifierType !== "enrollment") {
+    return res.status(400).json({ error: { message: "primaryIdentifierType must be 'seat' or 'enrollment'" } });
+  }
+
+  const { enrollments, enrollmentColumn, sheetName } = await extractEnrollmentNumbersFromXlsx(req.file.buffer, {
+    primaryIdentifierType,
+  });
 
   const batch = await ResultBatch.create({
     teacherId: req.user.sub,
     uploadDate: new Date(),
+    primaryIdentifierType,
     totalStudents: enrollments.length,
     passCount: 0,
     failCount: 0,
@@ -48,6 +56,7 @@ export const uploadBatch = asyncHandler(async (req, res) => {
       uploadDate: batch.uploadDate,
       totalStudents: batch.totalStudents,
       status: batch.status,
+      primaryIdentifierType: batch.primaryIdentifierType,
       sheetName,
       enrollmentColumn,
     },
@@ -635,6 +644,7 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
     buildAnalysisWorksheet(wb);
 
     const results = batch.results || [];
+    const primaryIdentifierType = String(batch.primaryIdentifierType || "seat").toLowerCase();
     const sheet = wb.addWorksheet("subject wise");
 
     // Note: keep using the same results array for subject-wise export
@@ -708,8 +718,8 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
 
     // Row 2: Base headers + MARKS merged
     sheet.getRow(2).getCell(1).value = "ROLL NO";
-    sheet.getRow(2).getCell(2).value = "SEAT NO";
-    sheet.getRow(2).getCell(3).value = "ENROLLMENT NO";
+    sheet.getRow(2).getCell(2).value = primaryIdentifierType === "enrollment" ? "ENROLLMENT NO" : "SEAT NO";
+    sheet.getRow(2).getCell(3).value = primaryIdentifierType === "enrollment" ? "SEAT NO" : "ENROLLMENT NO";
     sheet.getRow(2).getCell(4).value = "NAME";
     if (marksWidth > 0) {
       sheet.getRow(2).getCell(startSubjectCol).value = "MARKS";
@@ -817,7 +827,8 @@ export const exportBatchXlsx = asyncHandler(async (req, res) => {
       const row = sheet.getRow(startRow + i);
       row.getCell(1).value = i + 1;
       row.getCell(2).value = r.enrollmentNumber || "";
-      row.getCell(3).value = r.marksheetEnrollmentNumber || "";
+      row.getCell(3).value =
+        primaryIdentifierType === "enrollment" ? r.seatNumber || "" : r.marksheetEnrollmentNumber || "";
       row.getCell(4).value = r.name || "";
 
       cursor = startSubjectCol;
@@ -905,6 +916,7 @@ export const getBatch = asyncHandler(async (req, res) => {
       topperName: batch.topperName || null,
       topperPercentage: batch.topperPercentage || null,
       status: batch.status,
+      primaryIdentifierType: batch.primaryIdentifierType || "seat",
       results: batch.results,
       errors: batch.errors,
     },

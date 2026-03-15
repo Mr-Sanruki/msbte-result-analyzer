@@ -6,7 +6,7 @@ function normalizeCell(value) {
   return String(value).trim();
 }
 
-export async function extractEnrollmentNumbersFromXlsx(buffer) {
+export async function extractEnrollmentNumbersFromXlsx(buffer, opts = {}) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
 
@@ -21,8 +21,18 @@ export async function extractEnrollmentNumbersFromXlsx(buffer) {
   const headerRow = worksheet.getRow(1);
   let enrollmentCol = null;
 
+  const primary = String(opts?.primaryIdentifierType || "").toLowerCase();
+
   headerRow.eachCell((cell, colNumber) => {
     const header = normalizeCell(cell.value).toLowerCase();
+
+    if (!enrollmentCol && primary === "seat" && header.includes("seat")) {
+      enrollmentCol = colNumber;
+    }
+    if (!enrollmentCol && primary === "enrollment" && header.includes("enroll")) {
+      enrollmentCol = colNumber;
+    }
+
     if (!enrollmentCol && header.includes("seat")) {
       enrollmentCol = colNumber;
     }

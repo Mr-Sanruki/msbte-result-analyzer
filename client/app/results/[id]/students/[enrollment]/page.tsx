@@ -50,6 +50,7 @@ type StudentDetailResponse = {
     uploadDate: string;
     status: string;
     totalStudents: number;
+    primaryIdentifierType?: "seat" | "enrollment";
   };
   student: StudentResult;
 };
@@ -89,6 +90,7 @@ export default function StudentDetailPage() {
   }, [batchId, enrollment]);
 
   const student = data?.student;
+  const primaryLabel = data?.batch?.primaryIdentifierType === "enrollment" ? "Enrollment No" : "Seat No";
   const subjects = React.useMemo(() => {
     const sm = student?.subjectMarks;
     if (!sm || typeof sm !== "object") return [] as Array<[string, SubjectMarksEntry]>;
@@ -102,7 +104,7 @@ export default function StudentDetailPage() {
           title="Student Profile"
           subtitle={
             <>
-              Seat No: <span className="font-medium text-slate-900">{enrollment || "-"}</span>
+              {primaryLabel}: <span className="font-medium text-slate-900">{enrollment || "-"}</span>
             </>
           }
           backHref={`/results/${batchId}`}
