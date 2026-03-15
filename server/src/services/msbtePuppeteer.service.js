@@ -99,6 +99,18 @@ function loadSelectors() {
   }
 }
 
+function parsePositiveInt(value, fallback) {
+  const n = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+function getMsbteTimeouts() {
+  return {
+    captchaTimeoutMs: parsePositiveInt(process.env.MSBTE_CAPTCHA_TIMEOUT_MS, 12000),
+    resultTimeoutMs: parsePositiveInt(process.env.MSBTE_RESULT_TIMEOUT_MS, 45000),
+  };
+}
+
 function isCaptchaRelatedErrorMessage(message) {
   const m = String(message || "").toLowerCase();
   if (!m) return false;
@@ -342,6 +354,11 @@ class MsBteFetchJob {
 
     this.page = await this.browser.newPage();
 
+    // Hosted environments (Render) can be slower/variable; make timeouts configurable.
+    const { resultTimeoutMs } = getMsbteTimeouts();
+    this.page.setDefaultTimeout(resultTimeoutMs);
+    this.page.setDefaultNavigationTimeout(resultTimeoutMs);
+
     if (!env.MSBTE_RESULT_URL) {
       const err = new Error("MSBTE_RESULT_URL is not set in server .env");
       err.statusCode = 500;
@@ -517,8 +534,7 @@ class MsBteFetchJob {
         // Many MSBTE failures do not navigate, so waiting only on navigation can stall.
         await submit.click();
 
-        const captchaTimeoutMs = 12000;
-        const resultTimeoutMs = 30000;
+        const { captchaTimeoutMs, resultTimeoutMs } = getMsbteTimeouts();
 
         let outcome = null;
         try {
